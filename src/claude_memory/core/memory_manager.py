@@ -167,10 +167,17 @@ class MemoryManager:
                 session_info = self.session_manager.get_session_info(session_id)
                 session_state = self.session_manager.get_session_state()
 
+                session_info_dict = None
+                if session_info:
+                    session_info_dict = session_info.model_dump()
+                    # Convert datetime objects to strings for Rich display
+                    session_info_dict["created_at"] = session_info_dict["created_at"].strftime("%Y-%m-%d %H:%M:%S") if isinstance(session_info_dict["created_at"], datetime) else str(session_info_dict["created_at"])
+                    session_info_dict["updated_at"] = session_info_dict["updated_at"].strftime("%Y-%m-%d %H:%M:%S") if isinstance(session_info_dict["updated_at"], datetime) else str(session_info_dict["updated_at"])
+
                 return {
                     "success": True,
                     "session_id": session_id,
-                    "session_info": session_info.model_dump() if session_info else None,
+                    "session_info": session_info_dict,
                     "session_state": session_state,
                     "storage_path": str(self.storage_path)
                 }
@@ -289,11 +296,14 @@ class MemoryManager:
                     "error": "No active session"
                 }
 
+            # System directories that should not be considered as tasks
+            system_dirs = {'.context', 'sessions', '.git', '.DS_Store'}
+
             # Find all task directories
             tasks = []
             if self.storage_path.exists():
                 for task_dir in self.storage_path.iterdir():
-                    if task_dir.is_dir() and not task_dir.name.startswith('.'):
+                    if task_dir.is_dir() and not task_dir.name.startswith('.') and task_dir.name not in system_dirs:
                         task_name = task_dir.name
                         task_status = self.get_task_status(task_name)
                         if task_status["success"]:

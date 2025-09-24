@@ -56,10 +56,13 @@ class WorkflowEnforcer:
         """
         active_tasks = []
 
+        # System directories that should not be considered as tasks
+        system_dirs = {'.context', 'sessions', '.git', '.DS_Store'}
+
         # Look for task directories with files for this session
         if self.storage_path.exists():
             for task_dir in self.storage_path.iterdir():
-                if task_dir.is_dir():
+                if task_dir.is_dir() and task_dir.name not in system_dirs:
                     task_name = task_dir.name
                     # Check if this task has any files for current session
                     session_files = list(task_dir.glob(f"*{self.session_id}*"))
