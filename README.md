@@ -19,7 +19,7 @@ A portable, file-based memory system for Claude Code that implements a three-pha
 
 ## 🚀 Quick Installation
 
-### Option 1: Global Tool Installation (Recommended)
+### ⭐ Option 1: Global Tool Installation (Recommended)
 
 ```bash
 # Using uv (fastest) - works anywhere, no project required
@@ -32,6 +32,12 @@ pip install git+https://github.com/drag88/claude-memory-system.git && claude-mem
 pipx install git+https://github.com/drag88/claude-memory-system.git && claude-memory init
 ```
 
+**🎯 USE THIS METHOD** - it works everywhere:
+- ✅ Empty directories (no pyproject.toml needed)
+- ✅ Existing projects
+- ✅ Any directory, anywhere
+- ✅ Makes `claude-memory` command globally available
+
 **What this does:**
 1. ✅ Installs `claude-memory` CLI globally (available in any directory)
 2. ✅ Creates `.claude/memories/` directory for memory storage
@@ -41,9 +47,9 @@ pipx install git+https://github.com/drag88/claude-memory-system.git && claude-me
 6. ✅ Initializes memory system with first session
 7. ✅ Generates project context automatically
 
-**Works in any directory** - empty directories, existing projects, anywhere!
-
 ### Option 2: Project-Specific Installation
+
+⚠️ **Only use if you have an existing Python project with pyproject.toml**
 
 ```bash
 # For existing Python projects with pyproject.toml
@@ -52,6 +58,8 @@ uv add git+https://github.com/drag88/claude-memory-system.git && claude-memory i
 # For new Python projects (creates pyproject.toml first)
 uv init && uv add git+https://github.com/drag88/claude-memory-system.git && claude-memory init
 ```
+
+❌ **Don't use `uv add` in empty directories** - it will fail with "No pyproject.toml found"
 
 ### Option 3: Development Installation
 
@@ -578,18 +586,29 @@ export PATH="$HOME/.local/bin:$PATH"  # Linux/macOS
 uv tool install --force git+https://github.com/drag88/claude-memory-system.git
 ```
 
-**Q: "No `pyproject.toml` found" error with `uv add`**
+**Q: "No `pyproject.toml` found" error with `uv add`** 🚨
+
+This is the most common installation error! You're using the wrong command.
+
 ```bash
-# Use global tool installation instead (recommended)
-uv tool install git+https://github.com/drag88/claude-memory-system.git
+# ✅ CORRECT: Use global tool installation (works anywhere)
+uv tool install git+https://github.com/drag88/claude-memory-system.git && claude-memory init
 
-# OR create a Python project first
+# ✅ ALTERNATIVE: Use pip for global installation
+pip install git+https://github.com/drag88/claude-memory-system.git && claude-memory init
+
+# ❌ WRONG: Don't use 'uv add' in empty directories
+# uv add git+https://github.com/drag88/claude-memory-system.git  # This fails!
+
+# 🔧 OR create a Python project first (only if you need project-specific install)
 uv init  # Creates pyproject.toml
-uv add git+https://github.com/drag88/claude-memory-system.git
-
-# OR use pip for global installation
-pip install git+https://github.com/drag88/claude-memory-system.git
+uv add git+https://github.com/drag88/claude-memory-system.git && claude-memory init
 ```
+
+**Why this happens:**
+- `uv add` requires a Python project with `pyproject.toml`
+- `uv tool install` works globally in any directory (recommended!)
+- Use `uv tool install` for the best experience
 
 **Q: Permission errors with memory files**
 ```bash
