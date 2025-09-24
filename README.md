@@ -19,18 +19,21 @@ A portable, file-based memory system for Claude Code that implements a three-pha
 
 ## 🚀 Quick Installation
 
-### Option 1: One-Command Installation (Recommended)
+### Option 1: Global Tool Installation (Recommended)
 
 ```bash
-# Using uv (fastest) - automatically sets up everything
-uv add git+https://github.com/drag88/claude-memory-system.git && claude-memory init
+# Using uv (fastest) - works anywhere, no project required
+uv tool install git+https://github.com/drag88/claude-memory-system.git && claude-memory init
 
-# Using pip - automatically sets up everything
+# Using pip - works anywhere
 pip install git+https://github.com/drag88/claude-memory-system.git && claude-memory init
+
+# Alternative: pipx (if you have it)
+pipx install git+https://github.com/drag88/claude-memory-system.git && claude-memory init
 ```
 
 **What this does:**
-1. ✅ Installs `claude-memory` CLI globally
+1. ✅ Installs `claude-memory` CLI globally (available in any directory)
 2. ✅ Creates `.claude/memories/` directory for memory storage
 3. ✅ Installs hooks to `.claude/hooks/` (4 hook files)
 4. ✅ Installs 15+ specialized agents to `.claude/agents/`
@@ -38,17 +41,29 @@ pip install git+https://github.com/drag88/claude-memory-system.git && claude-mem
 6. ✅ Initializes memory system with first session
 7. ✅ Generates project context automatically
 
-### Option 2: Development Installation
+**Works in any directory** - empty directories, existing projects, anywhere!
+
+### Option 2: Project-Specific Installation
+
+```bash
+# For existing Python projects with pyproject.toml
+uv add git+https://github.com/drag88/claude-memory-system.git && claude-memory init
+
+# For new Python projects (creates pyproject.toml first)
+uv init && uv add git+https://github.com/drag88/claude-memory-system.git && claude-memory init
+```
+
+### Option 3: Development Installation
 
 ```bash
 git clone https://github.com/drag88/claude-memory-system.git
 cd claude-memory-system
-uv pip install -e .
+uv tool install -e .  # Global development install
 # or
-pip install -e .
+pip install -e .      # Local development install
 ```
 
-### Option 3: From PyPI (Coming Soon)
+### Option 4: From PyPI (Coming Soon)
 
 ```bash
 uv add claude-memory-system
@@ -68,10 +83,12 @@ claude-memory uninstall --keep-memories
 # Force remove without confirmation
 claude-memory uninstall --force
 
-# To completely remove the package:
-uv remove claude-memory-system
+# To completely remove the global package:
+uv tool uninstall claude-memory-system  # If installed with uv tool
 # or
-pip uninstall claude-memory-system
+pip uninstall claude-memory-system      # If installed with pip
+# or
+pipx uninstall claude-memory-system     # If installed with pipx
 ```
 
 ## 🏁 Quick Start
@@ -547,15 +564,31 @@ api.context_manager.add_custom_context({
 
 **Q: `claude-memory` command not found**
 ```bash
-# Ensure the package is installed
+# Check if installed globally
 which claude-memory
 
-# If using uv, make sure it's in your PATH
+# If using uv tool, check installation
 uv tool list
-export PATH="$HOME/.local/bin:$PATH"
+
+# Make sure tool directory is in PATH
+export PATH="$HOME/.local/bin:$PATH"  # Linux/macOS
+# or check uv tool dir: uv tool dir
 
 # Reinstall if needed
-uv add --force git+https://github.com/drag88/claude-memory-system.git
+uv tool install --force git+https://github.com/drag88/claude-memory-system.git
+```
+
+**Q: "No `pyproject.toml` found" error with `uv add`**
+```bash
+# Use global tool installation instead (recommended)
+uv tool install git+https://github.com/drag88/claude-memory-system.git
+
+# OR create a Python project first
+uv init  # Creates pyproject.toml
+uv add git+https://github.com/drag88/claude-memory-system.git
+
+# OR use pip for global installation
+pip install git+https://github.com/drag88/claude-memory-system.git
 ```
 
 **Q: Permission errors with memory files**
