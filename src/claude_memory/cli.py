@@ -46,9 +46,13 @@ def print_result(result: Dict[str, Any], show_details: bool = False) -> None:
 
 @app.command()
 def init(
-    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing configuration")
+    force: bool = typer.Option(False, "--force", "-f", help="Overwrite existing configuration"),
+    skip_setup: bool = typer.Option(False, "--skip-setup", help="Skip automatic hooks and agents setup")
 ) -> None:
     """Initialize Claude Memory System for current project."""
+    import shutil
+    import subprocess
+
     project_root = Path.cwd()
     claude_dir = project_root / ".claude"
     memories_dir = claude_dir / "memories"
@@ -58,6 +62,89 @@ def init(
         memories_dir.mkdir(parents=True, exist_ok=True)
         rprint(f"[green]✓[/green] Initialized memory storage at {memories_dir}")
 
+        # Auto-setup hooks and agents unless skipped
+        if not skip_setup:
+            rprint("[blue]🔧 Setting up hooks and agents...[/blue]")
+
+            # Create Claude Code directories
+            hooks_dir = claude_dir / "hooks"
+            agents_dir = claude_dir / "agents"
+            hooks_dir.mkdir(parents=True, exist_ok=True)
+            agents_dir.mkdir(parents=True, exist_ok=True)
+
+            # Find package location and install hooks/agents
+            try:
+                import claude_memory
+                package_path = Path(claude_memory.__file__).parent
+
+                # Install hooks
+                hooks_source = package_path / "hooks"
+                if hooks_source.exists():
+                    for hook_file in hooks_source.glob("*.py"):
+                        dest_file = hooks_dir / hook_file.name
+                        if not dest_file.exists() or force:
+                            shutil.copy2(hook_file, dest_file)
+                            dest_file.chmod(0o755)  # Make executable
+                    rprint(f"[green]✓[/green] Installed hooks to {hooks_dir}")
+
+                # Install agents from package data
+                try:
+                    agents_source = package_path / "data"
+                    if agents_source.exists():
+                        agent_count = 0
+                        for agent_file in agents_source.glob("*.md"):
+                            if not agent_file.name.startswith('.'):  # Skip hidden files
+                                dest_file = agents_dir / agent_file.name
+                                if not dest_file.exists() or force:
+                                    shutil.copy2(agent_file, dest_file)
+                                    agent_count += 1
+                        if agent_count > 0:
+                            rprint(f"[green]✓[/green] Installed {agent_count} agents to {agents_dir}")
+                        else:
+                            rprint("[yellow]⚠️  No agent files found or all already exist[/yellow]")
+                    else:
+                        rprint("[yellow]⚠️  Agent data directory not found in package[/yellow]")
+
+                except Exception as e:
+                    rprint(f"[yellow]⚠️  Agent installation failed: {e}[/yellow]")
+
+                # Update Claude settings
+                settings_file = claude_dir / "settings.json"
+                try:
+                    if settings_file.exists():
+                        with open(settings_file, 'r') as f:
+                            settings = json.load(f)
+                    else:
+                        settings = {}
+
+                    # Ensure hooks section exists
+                    if "hooks" not in settings:
+                        settings["hooks"] = {}
+
+                    # Add memory system hooks
+                    hook_configs = {
+                        "PreToolUse": [{"matcher": "Task", "hooks": [{"type": "command", "command": "python3 .claude/hooks/pre_tool_use.py"}]}],
+                        "PostToolUse": [{"matcher": ".*", "hooks": [{"type": "command", "command": "python3 .claude/hooks/post_tool_use.py"}]}],
+                        "SessionStart": [{"hooks": [{"type": "command", "command": "python3 .claude/hooks/session_start.py"}]}],
+                        "SubagentStop": [{"hooks": [{"type": "command", "command": "python3 .claude/hooks/subagent_stop.py"}]}]
+                    }
+
+                    for hook_type, hook_config in hook_configs.items():
+                        settings["hooks"][hook_type] = hook_config
+
+                    # Write updated settings
+                    with open(settings_file, 'w') as f:
+                        json.dump(settings, f, indent=2)
+
+                    rprint(f"[green]✓[/green] Updated Claude Code settings")
+
+                except Exception as e:
+                    rprint(f"[yellow]⚠️  Settings update failed: {e}[/yellow]")
+
+            except Exception as e:
+                rprint(f"[yellow]⚠️  Auto-setup failed: {e}[/yellow]")
+                rprint("[dim]You can run the setup manually with: python scripts/setup_hooks.py[/dim]")
+
         # Create initial session
         manager = MemoryManager()
         session_result = manager.session_manager_action("start")
@@ -65,8 +152,30 @@ def init(
         if session_result["success"]:
             rprint(f"[green]✓[/green] Created session: {session_result['session_id']}")
 
+        # Generate project context
+        try:
+            context = ProjectContext()
+            context_result = context.refresh_project_context(force=force)
+            if context_result["success"]:
+                rprint(f"[green]✓[/green] Generated project context")
+        except Exception as e:
+            rprint(f"[yellow]⚠️  Project context generation failed: {e}[/yellow]")
+
         rprint("\n[bold]Claude Memory System initialized![/bold]")
-        rprint("Use [cyan]claude-memory --help[/cyan] to see available commands.")
+
+        if not skip_setup:
+            agent_count = len(list(agents_dir.glob("*.md"))) if (claude_dir / "agents").exists() else 0
+            if agent_count > 0:
+                rprint(f"[green]🤖 {agent_count} specialized agents available[/green]")
+            rprint("[green]🔗 Memory system hooks configured[/green]")
+            rprint("[yellow]⚠️  Restart Claude Code to activate hooks[/yellow]")
+
+        rprint("\nAvailable commands:")
+        rprint("  [cyan]claude-memory scratchpad[/cyan] 'task' --content 'exploration'")
+        rprint("  [cyan]claude-memory plan[/cyan] 'task' --content 'implementation strategy'")
+        rprint("  [cyan]claude-memory append[/cyan] 'task' 'progress update'")
+        rprint("  [cyan]claude-memory status[/cyan] # Show all tasks")
+        rprint("  [cyan]claude-memory uninstall[/cyan] # Remove from project")
 
     except Exception as e:
         rprint(f"[red]✗ Initialization failed:[/red] {e}")
@@ -491,6 +600,119 @@ def export(
         rprint(f"[green]✓[/green] Exported to {output}")
     else:
         console.print(output_text)
+
+
+@app.command()
+def uninstall(
+    force: bool = typer.Option(False, "--force", "-f", help="Force removal without confirmation"),
+    keep_memories: bool = typer.Option(False, "--keep-memories", help="Keep .claude/memories directory")
+) -> None:
+    """Uninstall Claude Memory System from current project."""
+    import shutil
+
+    if not force:
+        confirm = typer.confirm("Are you sure you want to uninstall Claude Memory System from this project?")
+        if not confirm:
+            rprint("[yellow]Uninstall cancelled[/yellow]")
+            return
+
+    cwd = Path.cwd()
+    removed_items = []
+
+    # Remove .claude/hooks directory
+    hooks_dir = cwd / ".claude" / "hooks"
+    if hooks_dir.exists():
+        # Only remove memory system hooks
+        memory_hooks = ["pre_tool_use.py", "post_tool_use.py", "session_start.py", "subagent_stop.py"]
+        for hook in memory_hooks:
+            hook_file = hooks_dir / hook
+            if hook_file.exists():
+                hook_file.unlink()
+                removed_items.append(f".claude/hooks/{hook}")
+
+        # Remove hooks directory if empty
+        if not any(hooks_dir.iterdir()):
+            hooks_dir.rmdir()
+            removed_items.append(".claude/hooks/")
+
+    # Remove .claude/agents directory
+    agents_dir = cwd / ".claude" / "agents"
+    if agents_dir.exists():
+        shutil.rmtree(agents_dir)
+        removed_items.append(".claude/agents/")
+
+    # Remove .claude/memories directory (if not keeping)
+    if not keep_memories:
+        memories_dir = cwd / ".claude" / "memories"
+        if memories_dir.exists():
+            shutil.rmtree(memories_dir)
+            removed_items.append(".claude/memories/")
+
+    # Clean up .claude/settings.json (remove memory hooks)
+    settings_file = cwd / ".claude" / "settings.json"
+    if settings_file.exists():
+        try:
+            with open(settings_file, 'r') as f:
+                settings = json.load(f)
+
+            # Remove memory system hooks from settings
+            if "hooks" in settings:
+                for hook_type in ["PreToolUse", "PostToolUse", "SessionStart", "SubagentStop"]:
+                    if hook_type in settings["hooks"]:
+                        # Filter out memory system hooks
+                        filtered_hooks = []
+                        for hook_entry in settings["hooks"][hook_type]:
+                            if isinstance(hook_entry, dict) and "hooks" in hook_entry:
+                                hooks_list = hook_entry["hooks"]
+                                if isinstance(hooks_list, list):
+                                    memory_hook = any(
+                                        isinstance(h, dict) and
+                                        h.get("command", "").endswith(("pre_tool_use.py", "post_tool_use.py", "session_start.py", "subagent_stop.py"))
+                                        for h in hooks_list
+                                    )
+                                    if not memory_hook:
+                                        filtered_hooks.append(hook_entry)
+                                else:
+                                    filtered_hooks.append(hook_entry)
+                            else:
+                                filtered_hooks.append(hook_entry)
+
+                        if filtered_hooks:
+                            settings["hooks"][hook_type] = filtered_hooks
+                        else:
+                            del settings["hooks"][hook_type]
+
+                # Remove hooks section if empty
+                if not settings["hooks"]:
+                    del settings["hooks"]
+
+            # Write updated settings
+            with open(settings_file, 'w') as f:
+                json.dump(settings, f, indent=2)
+
+            removed_items.append("Memory hooks from .claude/settings.json")
+
+        except Exception as e:
+            rprint(f"[yellow]⚠️  Warning: Could not clean settings.json: {e}[/yellow]")
+
+    # Remove empty .claude directory
+    claude_dir = cwd / ".claude"
+    if claude_dir.exists() and not any(claude_dir.iterdir()):
+        claude_dir.rmdir()
+        removed_items.append(".claude/")
+
+    if removed_items:
+        rprint("[green]✓[/green] Uninstalled Claude Memory System")
+        rprint("[dim]Removed:[/dim]")
+        for item in removed_items:
+            rprint(f"  [dim]• {item}[/dim]")
+
+        if keep_memories:
+            rprint(f"[yellow]ℹ️  Kept memories at: .claude/memories/[/yellow]")
+
+        rprint("\n[dim]To reinstall: uv add git+https://github.com/drag88/claude-memory-system.git[/dim]")
+    else:
+        rprint("[yellow]No Claude Memory System files found to remove[/yellow]")
 
 
 @app.command()

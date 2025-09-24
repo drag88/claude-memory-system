@@ -50,6 +50,9 @@ Issues = "https://github.com/drag88/claude-memory-system/issues"
 [tool.hatch.build.targets.wheel]
 packages = ["src/claude_memory"]
 
+[tool.hatch.build.targets.wheel.shared-data]
+"src/claude_memory/data" = "claude_memory/data"
+
 [tool.black]
 line-length = 88
 target-version = ['py39']

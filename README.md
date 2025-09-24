@@ -19,15 +19,24 @@ A portable, file-based memory system for Claude Code that implements a three-pha
 
 ## 🚀 Quick Installation
 
-### Option 1: Install from GitHub (Recommended)
+### Option 1: One-Command Installation (Recommended)
 
 ```bash
-# Using uv (fastest)
-uv add git+https://github.com/drag88/claude-memory-system.git
+# Using uv (fastest) - automatically sets up everything
+uv add git+https://github.com/drag88/claude-memory-system.git && claude-memory init
 
-# Using pip
-pip install git+https://github.com/drag88/claude-memory-system.git
+# Using pip - automatically sets up everything
+pip install git+https://github.com/drag88/claude-memory-system.git && claude-memory init
 ```
+
+**What this does:**
+1. ✅ Installs `claude-memory` CLI globally
+2. ✅ Creates `.claude/memories/` directory for memory storage
+3. ✅ Installs hooks to `.claude/hooks/` (4 hook files)
+4. ✅ Installs 15+ specialized agents to `.claude/agents/`
+5. ✅ Updates `.claude/settings.json` with hook configuration
+6. ✅ Initializes memory system with first session
+7. ✅ Generates project context automatically
 
 ### Option 2: Development Installation
 
@@ -45,6 +54,24 @@ pip install -e .
 uv add claude-memory-system
 # or
 pip install claude-memory-system
+```
+
+### Uninstall
+
+```bash
+# Remove from current project (keeps package globally installed)
+claude-memory uninstall
+
+# Remove with confirmation and keep memory files
+claude-memory uninstall --keep-memories
+
+# Force remove without confirmation
+claude-memory uninstall --force
+
+# To completely remove the package:
+uv remove claude-memory-system
+# or
+pip uninstall claude-memory-system
 ```
 
 ## 🏁 Quick Start
@@ -291,6 +318,7 @@ api.append_progress("secure-api", "Security engineer completed: threat model ana
 |---------|-------------|---------|
 | `cleanup` | Clean old sessions/locks | `claude-memory cleanup --days 30` |
 | `export` | Export task data | `claude-memory export "task" --format json` |
+| `uninstall` | Remove from current project | `claude-memory uninstall` |
 | `version` | Show version info | `claude-memory version` |
 
 ## 🐍 Python API
@@ -462,7 +490,7 @@ your-project/
 │   │   ├── session_start.py
 │   │   └── subagent_stop.py
 │   └── settings.json          # Hook configuration
-├── .claude-memories/          # Memory storage directory
+├── .claude/memories/          # Memory storage directory
 │   ├── sessions/              # Session data
 │   │   └── abc123-def456/     # Session ID
 │   │       ├── tasks/         # Task files by name
