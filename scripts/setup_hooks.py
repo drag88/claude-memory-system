@@ -151,9 +151,32 @@ def verify_hook_files():
     return True
 
 
+def verify_agent_files():
+    """Verify that agent files are properly installed."""
+    agents_dir = Path(".claude/agents")
+
+    if not agents_dir.exists():
+        print("⚠️  .claude/agents directory not found")
+        return False
+
+    # Count agent files
+    agent_files = list(agents_dir.glob("*.md"))
+
+    if not agent_files:
+        print("⚠️  No agent files found in .claude/agents/")
+        return False
+
+    print(f"✅ Found {len(agent_files)} specialized agents:")
+    for agent_file in sorted(agent_files):
+        agent_name = agent_file.stem.replace("-", " ").title()
+        print(f"   • {agent_name}")
+
+    return True
+
+
 def main():
     """Main setup function."""
-    print("🔧 Setting up Claude Memory System hooks...")
+    print("🔧 Setting up Claude Memory System hooks and agents...")
 
     # Verify we're in a Claude Code project
     if not Path(".claude").exists():
@@ -163,6 +186,9 @@ def main():
     # Verify hook files
     if not verify_hook_files():
         sys.exit(1)
+
+    # Verify agent files (non-fatal if missing)
+    agents_available = verify_agent_files()
 
     # Update settings
     if not update_claude_settings():
@@ -174,6 +200,13 @@ def main():
     print("  • Log tool usage for tracking")
     print("  • Initialize memory on session start")
     print("  • Sync memory when sub-agents complete")
+
+    if agents_available:
+        print("\n🤖 Specialized agents are available:")
+        print("  • Use Task tool with agent names (e.g., 'backend-architect')")
+        print("  • Agents have memory system integration built-in")
+        print("  • Each agent follows specific domain expertise patterns")
+
     print("\nRestart Claude Code to activate the hooks.")
 
 

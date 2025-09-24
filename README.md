@@ -210,6 +210,52 @@ api = MemoryAPI()
 api.append_progress("implement-auth", "Sub-agent completed: JWT validation middleware")
 ```
 
+## 🤖 Specialized Agents
+
+The system includes 15+ specialized agents that are automatically installed to `.claude/agents/` during setup:
+
+### Available Agents
+
+| Agent | Focus Area | Use Cases |
+|-------|------------|-----------|
+| **backend-architect** | API design, databases, security | Backend system design, API development |
+| **frontend-architect** | UI/UX, responsive design, frameworks | Frontend architecture, component design |
+| **python-expert** | Production Python code, testing | Python development, code quality, testing |
+| **security-engineer** | Security analysis, threat modeling | Security reviews, vulnerability assessment |
+| **performance-engineer** | Optimization, profiling, scaling | Performance bottlenecks, system optimization |
+| **devops-architect** | CI/CD, infrastructure, monitoring | Deployment pipelines, infrastructure setup |
+| **quality-engineer** | Testing strategies, automation | Test planning, quality assurance |
+| **refactoring-expert** | Code improvement, technical debt | Code refactoring, architecture improvement |
+| **system-architect** | High-level design, scalability | System design, architecture decisions |
+| **technical-writer** | Documentation, API specs | Technical documentation, user guides |
+| **requirements-analyst** | Requirements gathering, analysis | Project planning, requirement clarification |
+| **root-cause-analyst** | Problem diagnosis, debugging | Bug investigation, system troubleshooting |
+| **learning-guide** | Educational content, tutorials | Learning paths, educational material |
+| **socratic-mentor** | Teaching through questions | Code reviews, learning guidance |
+| **business-panel-experts** | Business analysis, stakeholder needs | Business requirements, stakeholder alignment |
+
+### Using Specialized Agents
+
+```python
+# Example: Using the Task tool with specialized agents
+from claude_memory import MemoryAPI
+
+# The agents automatically receive memory context and can:
+# 1. Access current task scratchpads and plans
+# 2. Log progress updates to memory system
+# 3. Coordinate across multiple tasks
+
+# Memory context is automatically injected, agents can use:
+api = MemoryAPI()
+api.append_progress("secure-api", "Security engineer completed: threat model analysis")
+```
+
+**Agent Features:**
+- **Memory Integration**: All agents automatically use the memory system
+- **Domain Expertise**: Each agent follows specific behavioral patterns
+- **Consistent Workflow**: All agents follow the three-phase workflow
+- **Context Awareness**: Agents receive project context automatically
+
 ## 🛠️ CLI Reference
 
 ### Core Commands
@@ -404,7 +450,19 @@ The memory system creates this structure in your project:
 
 ```
 your-project/
-├── .claude-memories/           # Memory storage directory
+├── .claude/                    # Claude Code configuration
+│   ├── agents/                # Specialized agents (15+ files)
+│   │   ├── backend-architect.md
+│   │   ├── python-expert.md
+│   │   ├── security-engineer.md
+│   │   └── ... (and more)
+│   ├── hooks/                 # Memory system hooks
+│   │   ├── pre_tool_use.py
+│   │   ├── post_tool_use.py
+│   │   ├── session_start.py
+│   │   └── subagent_stop.py
+│   └── settings.json          # Hook configuration
+├── .claude-memories/          # Memory storage directory
 │   ├── sessions/              # Session data
 │   │   └── abc123-def456/     # Session ID
 │   │       ├── tasks/         # Task files by name
@@ -419,15 +477,21 @@ your-project/
 
 ### Claude Code Integration
 
-The memory system automatically installs hooks for Claude Code integration:
+The memory system automatically installs hooks and agents for Claude Code integration:
 
 ```bash
-# Hook files (automatically installed)
-~/.claude/hooks/
-├── pre_tool_use.py           # Injects context before sub-agents
-├── post_tool_use.py          # Updates memory after tool use
-├── session_start.py          # Initializes session
-└── subagent_stop.py          # Coordinates sub-agent completion
+# Files automatically installed to .claude/
+├── agents/                   # Specialized agents
+│   ├── backend-architect.md
+│   ├── frontend-architect.md
+│   ├── python-expert.md
+│   ├── security-engineer.md
+│   └── ... (15+ total agents)
+└── hooks/                    # Memory system hooks
+    ├── pre_tool_use.py       # Injects context before sub-agents
+    ├── post_tool_use.py      # Updates memory after tool use
+    ├── session_start.py      # Initializes session
+    └── subagent_stop.py      # Coordinates sub-agent completion
 ```
 
 ### Customization

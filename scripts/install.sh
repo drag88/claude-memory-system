@@ -66,18 +66,21 @@ verify_installation() {
     fi
 }
 
-# Setup project hooks (optional)
+# Setup project hooks and agents (optional)
 setup_project_hooks() {
-    print_step "Setting up hooks for current project (optional)..."
+    print_step "Setting up hooks and agents for current project (optional)..."
 
     # Check if we're in a Claude Code project
     if [ ! -d ".claude" ]; then
         print_warning "No .claude directory found. Creating minimal structure..."
         mkdir -p .claude/hooks
+        mkdir -p .claude/agents
     fi
 
     HOOKS_DIR=".claude/hooks"
+    AGENTS_DIR=".claude/agents"
     PACKAGE_HOOKS_DIR="src/claude_memory/hooks"
+    PACKAGE_AGENTS_DIR="agents"
 
     # Copy hook scripts
     for hook in pre_tool_use.py post_tool_use.py session_start.py subagent_stop.py; do
@@ -87,6 +90,21 @@ setup_project_hooks() {
             print_status "Copied $hook to $HOOKS_DIR/"
         fi
     done
+
+    # Copy agent files
+    if [ -d "$PACKAGE_AGENTS_DIR" ]; then
+        print_step "Installing specialized agents..."
+        cp "$PACKAGE_AGENTS_DIR"/*.md "$AGENTS_DIR/" 2>/dev/null || true
+        agent_count=$(ls -1 "$AGENTS_DIR"/*.md 2>/dev/null | wc -l)
+        if [ "$agent_count" -gt 0 ]; then
+            print_status "Installed $agent_count specialized agents to $AGENTS_DIR/"
+            print_status "Available agents: backend-architect, frontend-architect, python-expert, security-engineer, and more"
+        else
+            print_warning "No agent files found to copy"
+        fi
+    else
+        print_warning "No agents directory found in package"
+    fi
 
     # Update .claude/settings.json if it exists
     if [ -f ".claude/settings.json" ]; then
@@ -180,10 +198,10 @@ main() {
     install_package
     verify_installation
 
-    # Ask if user wants to setup hooks for current project
+    # Ask if user wants to setup hooks and agents for current project
     if [ -t 0 ]; then  # Check if running interactively
         echo
-        read -p "Setup hooks for current project? (y/N): " setup_hooks
+        read -p "Setup hooks and agents for current project? (y/N): " setup_hooks
         if [[ $setup_hooks =~ ^[Yy]$ ]]; then
             setup_project_hooks
             initialize_memory
