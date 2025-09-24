@@ -73,6 +73,26 @@ class WorkflowEnforcer:
 
         return active_tasks
 
+    def _get_agent_info(self) -> str:
+        """
+        Get agent identification information.
+
+        Returns:
+            String identifying the current agent (Main Agent, Sub-agent, or specific agent type)
+        """
+        import os
+
+        # Check for Claude Code sub-agent environment variables or context
+        # These would typically be set by the Task tool or sub-agent system
+        if os.getenv('CLAUDE_SUBAGENT_TYPE'):
+            return f"Sub-agent ({os.getenv('CLAUDE_SUBAGENT_TYPE')})"
+        elif os.getenv('CLAUDE_AGENT_TYPE'):
+            return f"Agent ({os.getenv('CLAUDE_AGENT_TYPE')})"
+        elif os.getenv('CLAUDE_IS_SUBAGENT'):
+            return "Sub-agent"
+        else:
+            return "Main Agent"
+
     def get_task_files(self, task_name: str) -> Dict[FileType, Optional[Path]]:
         """
         Get paths for all task files.
@@ -187,14 +207,23 @@ class WorkflowEnforcer:
         scratchpad_path = task_dir / f"{task_name}-{self.session_id}-scratchpad.md"
 
         with file_lock(scratchpad_path):
-            if content:
-                with open(scratchpad_path, 'w') as f:
-                    f.write(content)
-            elif not scratchpad_path.exists():
-                # Create empty scratchpad with template
+            if not scratchpad_path.exists():
+                # Create new scratchpad with template and initial content
                 template = self._get_scratchpad_template(task_name)
+                initial_content = template
+                if content:
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    agent_info = self._get_agent_info()
+                    initial_content += f"\n## Initial Content - {agent_info} - {timestamp}\n\n{content}\n"
                 with open(scratchpad_path, 'w') as f:
-                    f.write(template)
+                    f.write(initial_content)
+            elif content:
+                # Append to existing scratchpad (collaborative/mutable)
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                agent_info = self._get_agent_info()
+                entry = f"\n## Update - {agent_info} - {timestamp}\n\n{content}\n"
+                with open(scratchpad_path, 'a') as f:
+                    f.write(entry)
 
         return scratchpad_path
 
@@ -276,7 +305,8 @@ class WorkflowEnforcer:
 
             # Append new content
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            entry = f"\n## Progress Update - {timestamp}\n\n{content}\n"
+            agent_info = self._get_agent_info()
+            entry = f"\n## Progress Update - {agent_info} - {timestamp}\n\n{content}\n"
 
             with open(progress_path, 'a') as f:
                 f.write(entry)
