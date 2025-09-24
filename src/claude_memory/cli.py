@@ -65,10 +65,10 @@ def init(
         # Create or update CLAUDE.md with memory system instructions
         claude_md_path = project_root / "CLAUDE.md"
         try:
-            # Load template from package data
+            # Load template from package templates
             import claude_memory
             package_path = Path(claude_memory.__file__).parent
-            template_path = package_path / "data" / "claude_template.md"
+            template_path = package_path / "templates" / "claude_template.md"
 
             if template_path.exists():
                 template_content = template_path.read_text()
@@ -124,7 +124,7 @@ def init(
                     if agents_source.exists():
                         agent_count = 0
                         for agent_file in agents_source.glob("*.md"):
-                            if not agent_file.name.startswith('.'):  # Skip hidden files
+                            if not agent_file.name.startswith('.') and agent_file.name != "claude_template.md":  # Skip hidden files and template
                                 dest_file = agents_dir / agent_file.name
                                 if not dest_file.exists() or force:
                                     shutil.copy2(agent_file, dest_file)
