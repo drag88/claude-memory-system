@@ -23,16 +23,16 @@ A portable, file-based memory system for Claude Code that implements a three-pha
 
 ```bash
 # Using uv (fastest)
-uv add git+https://github.com/yourusername/claude-memory-system.git
+uv add git+https://github.com/drag88/claude-memory-system.git
 
 # Using pip
-pip install git+https://github.com/yourusername/claude-memory-system.git
+pip install git+https://github.com/drag88/claude-memory-system.git
 ```
 
 ### Option 2: Development Installation
 
 ```bash
-git clone https://github.com/yourusername/claude-memory-system.git
+git clone https://github.com/drag88/claude-memory-system.git
 cd claude-memory-system
 uv pip install -e .
 # or
@@ -463,7 +463,7 @@ uv tool list
 export PATH="$HOME/.local/bin:$PATH"
 
 # Reinstall if needed
-uv add --force git+https://github.com/yourusername/claude-memory-system.git
+uv add --force git+https://github.com/drag88/claude-memory-system.git
 ```
 
 **Q: Permission errors with memory files**
@@ -561,7 +561,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/claude-memory-system.git
+git clone https://github.com/drag88/claude-memory-system.git
 cd claude-memory-system
 
 # Install in development mode
@@ -608,4 +608,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **Made with ❤️ for developers who want structured thinking in their AI-assisted development workflow.**
 
-For issues, feature requests, or questions, please visit our [GitHub Issues](https://github.com/yourusername/claude-memory-system/issues) page.
+For issues, feature requests, or questions, please visit our [GitHub Issues](https://github.com/drag88/claude-memory-system/issues) page.

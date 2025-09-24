@@ -44,8 +44,8 @@ dev = [
 claude-memory = "claude_memory.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/claude-memory-system"
-Issues = "https://github.com/yourusername/claude-memory-system/issues"
+Homepage = "https://github.com/drag88/claude-memory-system"
+Issues = "https://github.com/drag88/claude-memory-system/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/claude_memory"]
