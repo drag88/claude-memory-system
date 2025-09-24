@@ -145,8 +145,8 @@ def main():
                 if MemoryAPI is None:
                     # If imports failed, just allow without memory context
                     response = {
-                        "decision": "allow",
-                        "reason": "Memory system module not available"
+                        "permissionDecision": "allow",
+                        "permissionDecisionReason": "Memory system module not available"
                     }
                 else:
                     api = MemoryAPI()
@@ -157,20 +157,20 @@ def main():
 
                     # Return modified input
                     response = {
-                        "decision": "allow",
+                        "permissionDecision": "allow",
                         "modifiedInput": modified_input
                     }
 
             except Exception as e:
                 # If memory system fails, log but don't block
                 response = {
-                    "decision": "allow",
-                    "reason": f"Memory system unavailable: {e}"
+                    "permissionDecision": "allow",
+                    "permissionDecisionReason": f"Memory system unavailable: {e}"
                 }
         else:
             # For non-Task tools, just allow
             response = {
-                "decision": "allow"
+                "permissionDecision": "allow"
             }
 
         print(json.dumps(response))
@@ -179,8 +179,8 @@ def main():
     except Exception as e:
         # If anything goes wrong, allow the operation but log the error
         response = {
-            "decision": "allow",
-            "reason": f"Hook error: {e}"
+            "permissionDecision": "allow",
+            "permissionDecisionReason": f"Hook error: {e}"
         }
         print(json.dumps(response))
         sys.exit(0)
