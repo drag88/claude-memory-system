@@ -7,17 +7,48 @@ Initializes memory system when Claude Code session starts.
 
 import json
 import sys
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
+# Try to import claude_memory - handle different installation methods
 try:
     from claude_memory import MemoryAPI
     from claude_memory.core.context_manager import ProjectContext
 except ImportError:
-    # If package not installed, try to import from parent directory
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from claude_memory import MemoryAPI
-    from claude_memory.core.context_manager import ProjectContext
+    # For global tool installations, try to find the package
+    try:
+        # Try to get the installation path from uv tool
+        result = subprocess.run(['uv', 'tool', 'dir'], capture_output=True, text=True)
+        if result.returncode == 0:
+            tool_dir = Path(result.stdout.strip())
+            # Look for claude-memory-system installation with any Python 3.x version
+            claude_tool_dir = tool_dir / "claude-memory-system"
+            if claude_tool_dir.exists():
+                lib_dir = claude_tool_dir / "lib"
+                if lib_dir.exists():
+                    # Find any python3.x directory
+                    for python_dir in lib_dir.glob("python3.*"):
+                        site_packages = python_dir / "site-packages"
+                        if site_packages.exists():
+                            sys.path.insert(0, str(site_packages))
+                            break
+    except:
+        pass
+
+    try:
+        from claude_memory import MemoryAPI
+        from claude_memory.core.context_manager import ProjectContext
+    except ImportError:
+        # If still failing, try relative import from package directory
+        try:
+            sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+            from claude_memory import MemoryAPI
+            from claude_memory.core.context_manager import ProjectContext
+        except ImportError:
+            # Final fallback - use CLI commands instead
+            MemoryAPI = None
+            ProjectContext = None
 
 
 def initialize_memory_session() -> dict:
@@ -28,6 +59,37 @@ def initialize_memory_session() -> dict:
         Context to add to Claude's session
     """
     try:
+        # If imports failed, return basic context
+        if MemoryAPI is None or ProjectContext is None:
+            return {
+                "success": True,
+                "session_id": "unavailable",
+                "context": """## 🧠 Memory System Available
+
+**Status:** CLI-only mode
+**Storage Path:** .claude/memories/
+
+### Available Memory Commands:
+```bash
+claude-memory status                    # Show all tasks
+claude-memory scratchpad "task-name"    # Start exploration
+claude-memory plan "task-name"          # Create implementation plan
+claude-memory append "task-name" "..."  # Track progress
+claude-memory session info              # Session details
+```
+
+### Three-Phase Workflow:
+1. **DISCOVERY** → Mutable scratchpad for exploration
+2. **PLANNING** → Write-once plan creation
+3. **EXECUTION** → Append-only progress tracking
+
+Use these commands throughout your work to maintain persistent memory across sessions.
+""",
+                "storage_path": str(Path.cwd() / ".claude" / "memories"),
+                "task_count": 0,
+                "project_context": ""
+            }
+
         api = MemoryAPI()
 
         # Check if memory system is initialized

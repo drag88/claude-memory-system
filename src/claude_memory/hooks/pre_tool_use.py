@@ -7,14 +7,43 @@ Intercepts Task tool calls to inject memory context for sub-agents.
 
 import json
 import sys
+import subprocess
 from pathlib import Path
 
+# Try to import claude_memory - handle different installation methods
 try:
     from claude_memory import MemoryAPI
 except ImportError:
-    # If package not installed, try to import from parent directory
-    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-    from claude_memory import MemoryAPI
+    # For global tool installations, try to find the package
+    try:
+        # Try to get the installation path from uv tool
+        result = subprocess.run(['uv', 'tool', 'dir'], capture_output=True, text=True)
+        if result.returncode == 0:
+            tool_dir = Path(result.stdout.strip())
+            # Look for claude-memory-system installation with any Python 3.x version
+            claude_tool_dir = tool_dir / "claude-memory-system"
+            if claude_tool_dir.exists():
+                lib_dir = claude_tool_dir / "lib"
+                if lib_dir.exists():
+                    # Find any python3.x directory
+                    for python_dir in lib_dir.glob("python3.*"):
+                        site_packages = python_dir / "site-packages"
+                        if site_packages.exists():
+                            sys.path.insert(0, str(site_packages))
+                            break
+    except:
+        pass
+
+    try:
+        from claude_memory import MemoryAPI
+    except ImportError:
+        # If still failing, try relative import from package directory
+        try:
+            sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+            from claude_memory import MemoryAPI
+        except ImportError:
+            # Final fallback
+            MemoryAPI = None
 
 
 def inject_memory_instructions(input_data: dict, task_context: dict) -> dict:
@@ -113,17 +142,24 @@ def main():
         if tool_name == 'Task':
             # Get memory context
             try:
-                api = MemoryAPI()
-                task_context = api.get_context_for_subagent()
+                if MemoryAPI is None:
+                    # If imports failed, just allow without memory context
+                    response = {
+                        "decision": "allow",
+                        "reason": "Memory system module not available"
+                    }
+                else:
+                    api = MemoryAPI()
+                    task_context = api.get_context_for_subagent()
 
-                # Inject memory instructions
-                modified_input = inject_memory_instructions(input_data, task_context)
+                    # Inject memory instructions
+                    modified_input = inject_memory_instructions(input_data, task_context)
 
-                # Return modified input
-                response = {
-                    "decision": "allow",
-                    "modifiedInput": modified_input
-                }
+                    # Return modified input
+                    response = {
+                        "decision": "allow",
+                        "modifiedInput": modified_input
+                    }
 
             except Exception as e:
                 # If memory system fails, log but don't block
