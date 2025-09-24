@@ -25,6 +25,7 @@ requires-python = ">=3.9"
 dependencies = [
     "portalocker>=2.8.0",  # Cross-platform file locking
     "pydantic>=2.0",       # Data validation and serialization
+    "psutil>=5.9.0",       # Process and system utilities
     "rich>=13.0",          # CLI formatting and tables
     "typer>=0.9.0",        # CLI framework
     "watchdog>=3.0",       # File system monitoring

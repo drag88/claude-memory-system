@@ -78,20 +78,47 @@ class WorkflowEnforcer:
         Get agent identification information.
 
         Returns:
-            String identifying the current agent (Main Agent, Sub-agent, or specific agent type)
+            String identifying the current agent
         """
         import os
+        import sys
 
-        # Check for Claude Code sub-agent environment variables or context
-        # These would typically be set by the Task tool or sub-agent system
-        if os.getenv('CLAUDE_SUBAGENT_TYPE'):
-            return f"Sub-agent ({os.getenv('CLAUDE_SUBAGENT_TYPE')})"
-        elif os.getenv('CLAUDE_AGENT_TYPE'):
-            return f"Agent ({os.getenv('CLAUDE_AGENT_TYPE')})"
-        elif os.getenv('CLAUDE_IS_SUBAGENT'):
+        # First, check environment variables that might be set by Claude Code
+        env_vars = [
+            'CLAUDE_SUBAGENT_TYPE',
+            'CLAUDE_AGENT_TYPE',
+            'CLAUDE_AGENT_NAME',
+            'ANTHROPIC_AGENT_TYPE',
+            'TASK_AGENT_TYPE'
+        ]
+
+        for var in env_vars:
+            value = os.getenv(var)
+            if value:
+                return value
+
+        # Check if we can detect from process info or command line
+        try:
+            import psutil
+            current_process = psutil.Process()
+            cmdline = ' '.join(current_process.cmdline())
+
+            # Look for agent names in command line
+            if 'system-architect' in cmdline:
+                return 'system-architect'
+            elif 'python-expert' in cmdline:
+                return 'python-expert'
+            elif 'refactoring-expert' in cmdline:
+                return 'refactoring-expert'
+        except:
+            pass
+
+        # If in a subagent context but no specific type identified
+        if os.getenv('CLAUDE_IS_SUBAGENT'):
             return "Sub-agent"
-        else:
-            return "Main Agent"
+
+        # Default fallback
+        return "Main Agent"
 
     def get_task_files(self, task_name: str) -> Dict[FileType, Optional[Path]]:
         """
@@ -283,7 +310,7 @@ class WorkflowEnforcer:
             Path to progress file
 
         Raises:
-            ValueError: If no plan exists
+            ValueError: If no plan exists or agent hasn't acknowledged existing plan
         """
         files = self.get_task_files(task_name)
 
@@ -291,10 +318,32 @@ class WorkflowEnforcer:
         if not files[FileType.PLAN]:
             raise ValueError("Cannot track progress without plan")
 
+        # Read existing plan for validation
+        plan_path = files[FileType.PLAN]
+        plan_content = ""
+        if plan_path and plan_path.exists():
+            plan_content = plan_path.read_text()
+
+        # Check if this is a subsequent agent (not the plan creator)
+        agent_info = self._get_agent_info()
+        progress_path = self.storage_path / task_name / f"{task_name}-{self.session_id}-progress.md"
+
+        # If progress file exists and this agent hasn't contributed yet, require plan acknowledgment
+        if progress_path.exists():
+            existing_progress = progress_path.read_text()
+            if agent_info not in existing_progress:
+                # This is a new agent joining - require plan acknowledgment
+                plan_keywords = ["plan", "strategy", "approach", "based on", "following", "according to"]
+                if not any(keyword in content.lower() for keyword in plan_keywords):
+                    plan_summary = plan_content[:300] + "..." if len(plan_content) > 300 else plan_content
+                    raise ValueError(
+                        f"Multi-agent workflow violation: New agent '{agent_info}' must acknowledge existing plan before contributing.\n"
+                        f"Current plan summary:\n{plan_summary}\n\n"
+                        f"Include plan references like: 'Following the established plan...', 'Based on the plan strategy...', etc."
+                    )
+
         task_dir = self.storage_path / task_name
         task_dir.mkdir(parents=True, exist_ok=True)
-
-        progress_path = task_dir / f"{task_name}-{self.session_id}-progress.md"
 
         with file_lock(progress_path):
             # Create progress file if it doesn't exist
@@ -305,7 +354,6 @@ class WorkflowEnforcer:
 
             # Append new content
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            agent_info = self._get_agent_info()
             entry = f"\n## Progress Update - {agent_info} - {timestamp}\n\n{content}\n"
 
             with open(progress_path, 'a') as f:

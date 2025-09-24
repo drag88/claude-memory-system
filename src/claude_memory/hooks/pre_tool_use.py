@@ -80,6 +80,27 @@ def inject_memory_instructions(input_data: dict, task_context: dict) -> dict:
         if end != -1:
             task_name = prompt[start:end].strip('"\'')
 
+    # Check for existing plan context
+    plan_context = ""
+    if MemoryAPI is not None:
+        try:
+            api = MemoryAPI()
+            task_status = api.get_task_status(task_name)
+            if task_status.get("success") and task_status.get("files", {}).get("plan"):
+                plan_context = f"""
+### ⚠️ EXISTING PLAN DETECTED
+**A plan already exists for task '{task_name}'.**
+
+**CRITICAL:** Before contributing progress, you MUST:
+1. Review the existing plan with `claude-memory status "{task_name}"`
+2. Acknowledge the plan in your progress updates (e.g., "Following the established plan...")
+3. Align your work with the existing strategy
+
+**Multi-agent workflow requires plan acknowledgment before progress contributions.**
+"""
+        except:
+            pass
+
     # Generate memory instructions
     memory_instructions = f"""
 ## 🧠 Memory System Integration
@@ -87,7 +108,7 @@ def inject_memory_instructions(input_data: dict, task_context: dict) -> dict:
 **Current Session:** {task_context['session_id']}
 **Storage Path:** {task_context['storage_path']}
 **Active Tasks:** {', '.join(task_context['active_tasks']) if task_context['active_tasks'] else 'None'}
-
+{plan_context}
 ### Memory Commands Available:
 ```bash
 # Discovery phase - mutable exploration
