@@ -62,6 +62,37 @@ def init(
         memories_dir.mkdir(parents=True, exist_ok=True)
         rprint(f"[green]✓[/green] Initialized memory storage at {memories_dir}")
 
+        # Create or update CLAUDE.md with memory system instructions
+        claude_md_path = project_root / "CLAUDE.md"
+        try:
+            # Load template from package data
+            import claude_memory
+            package_path = Path(claude_memory.__file__).parent
+            template_path = package_path / "data" / "claude_template.md"
+
+            if template_path.exists():
+                template_content = template_path.read_text()
+
+                if claude_md_path.exists():
+                    # Check if memory system section already exists
+                    existing_content = claude_md_path.read_text()
+                    if "## 🧠 Claude Memory System" not in existing_content:
+                        # Append memory system section
+                        updated_content = existing_content.rstrip() + "\n\n" + template_content
+                        claude_md_path.write_text(updated_content)
+                        rprint(f"[green]✓[/green] Added memory system instructions to existing CLAUDE.md")
+                    else:
+                        rprint(f"[yellow]ℹ️[/yellow] CLAUDE.md already contains memory system instructions")
+                else:
+                    # Create new CLAUDE.md with template
+                    claude_md_path.write_text(template_content)
+                    rprint(f"[green]✓[/green] Created CLAUDE.md with memory system instructions")
+            else:
+                rprint(f"[yellow]⚠️[/yellow] Template file not found, skipping CLAUDE.md creation")
+
+        except Exception as e:
+            rprint(f"[yellow]⚠️[/yellow] CLAUDE.md creation failed: {e}")
+
         # Auto-setup hooks and agents unless skipped
         if not skip_setup:
             rprint("[blue]🔧 Setting up hooks and agents...[/blue]")
@@ -604,7 +635,8 @@ def export(
 @app.command()
 def uninstall(
     force: bool = typer.Option(False, "--force", "-f", help="Force removal without confirmation"),
-    keep_memories: bool = typer.Option(False, "--keep-memories", help="Keep .claude/memories directory")
+    keep_memories: bool = typer.Option(False, "--keep-memories", help="Keep .claude/memories directory"),
+    keep_claude_md: bool = typer.Option(False, "--keep-claude-md", help="Keep CLAUDE.md file unchanged")
 ) -> None:
     """Uninstall Claude Memory System from current project."""
     import shutil
@@ -693,6 +725,55 @@ def uninstall(
 
         except Exception as e:
             rprint(f"[yellow]⚠️  Warning: Could not clean settings.json: {e}[/yellow]")
+
+    # Handle CLAUDE.md cleanup (if not keeping)
+    if not keep_claude_md:
+        claude_md_path = cwd / "CLAUDE.md"
+        if claude_md_path.exists():
+            try:
+                content = claude_md_path.read_text()
+                # Check if it contains memory system section
+                if "## 🧠 Claude Memory System" in content:
+                    # Split content and remove memory system section
+                    lines = content.split('\n')
+                    filtered_lines = []
+                    skip_section = False
+                    found_memory_section = False
+
+                    for i, line in enumerate(lines):
+                        if line.strip() == "## 🧠 Claude Memory System":
+                            found_memory_section = True
+                            skip_section = True
+                            # Also remove the preceding title if it's our template title
+                            if (i > 0 and
+                                lines[i-1].strip() == "# CLAUDE.md - Project Instructions" and
+                                (i == 1 or lines[i-2].strip() == "")):
+                                # Remove the template title and empty line before it
+                                if filtered_lines and filtered_lines[-1].strip() == "":
+                                    filtered_lines.pop()
+                                if filtered_lines and filtered_lines[-1].strip() == "# CLAUDE.md - Project Instructions":
+                                    filtered_lines.pop()
+                            continue
+                        elif line.startswith("## ") and skip_section and line.strip() != "## 🧠 Claude Memory System":
+                            # Next section found, stop skipping
+                            skip_section = False
+                            filtered_lines.append(line)
+                        elif not skip_section:
+                            filtered_lines.append(line)
+
+                    # Remove trailing empty lines and write back
+                    filtered_content = '\n'.join(filtered_lines).rstrip() + '\n'
+
+                    # If file would be empty or only has title, remove it
+                    if len(filtered_content.strip()) <= len("# CLAUDE.md - Project Instructions"):
+                        claude_md_path.unlink()
+                        removed_items.append("CLAUDE.md (file was mostly empty)")
+                    else:
+                        claude_md_path.write_text(filtered_content)
+                        removed_items.append("Memory system section from CLAUDE.md")
+
+            except Exception as e:
+                rprint(f"[yellow]⚠️  Warning: Could not clean CLAUDE.md: {e}[/yellow]")
 
     # Remove empty .claude directory
     claude_dir = cwd / ".claude"

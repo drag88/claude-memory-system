@@ -155,12 +155,12 @@ def main():
         if sync_result["success"]:
             response = {
                 "continue": True,
-                "reason": f"Memory synchronized for {sync_result.get('subagent_type', 'unknown')} sub-agent"
+                "stopReason": f"Memory synchronized for {sync_result.get('subagent_type', 'unknown')} sub-agent"
             }
         else:
             response = {
                 "continue": True,
-                "reason": f"Memory sync failed but continuing: {sync_result['error']}"
+                "stopReason": f"Memory sync failed but continuing: {sync_result['error']}"
             }
 
         print(json.dumps(response))
@@ -170,7 +170,7 @@ def main():
         # If anything goes wrong, still allow continuation
         response = {
             "continue": True,
-            "reason": f"Subagent stop hook error: {e}"
+            "stopReason": f"Subagent stop hook error: {e}"
         }
         print(json.dumps(response))
         sys.exit(0)
