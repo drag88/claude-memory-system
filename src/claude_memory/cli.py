@@ -155,9 +155,8 @@ def init(
         # Generate project context
         try:
             context = ProjectContext()
-            context_result = context.refresh_project_context(force=force)
-            if context_result["success"]:
-                rprint(f"[green]✓[/green] Generated project context")
+            context.refresh_context()  # This returns the context data directly
+            rprint(f"[green]✓[/green] Generated project context")
         except Exception as e:
             rprint(f"[yellow]⚠️  Project context generation failed: {e}[/yellow]")
 
