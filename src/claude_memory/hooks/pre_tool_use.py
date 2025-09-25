@@ -48,14 +48,14 @@ except ImportError:
 
 def inject_memory_instructions(input_data: dict, task_context: dict) -> dict:
     """
-    Inject memory instructions into Task tool prompts.
+    Inject context-aware memory instructions into Task tool prompts.
 
     Args:
         input_data: Original tool input from Claude
         task_context: Current memory context
 
     Returns:
-        Modified input data with memory instructions
+        Modified input data with context-aware memory instructions
     """
     tool_name = input_data.get('tool_name')
 
@@ -80,14 +80,22 @@ def inject_memory_instructions(input_data: dict, task_context: dict) -> dict:
         if end != -1:
             task_name = prompt[start:end].strip('"\'')
 
-    # Check for existing plan context
-    plan_context = ""
+    # Get context-aware instructions if available
+    context_instructions = ""
     if MemoryAPI is not None:
         try:
             api = MemoryAPI()
-            task_status = api.get_task_status(task_name)
-            if task_status.get("success") and task_status.get("files", {}).get("plan"):
-                plan_context = f"""
+
+            # Try to get context-aware injection (new system)
+            try:
+                session_context = api.get_session_context_injection()
+                if session_context:
+                    context_instructions = session_context
+            except:
+                # Fallback to legacy system
+                task_status = api.get_task_status(task_name)
+                if task_status.get("success") and task_status.get("files", {}).get("plan"):
+                    context_instructions = f"""
 ### ⚠️ EXISTING PLAN DETECTED
 **A plan already exists for task '{task_name}'.**
 
@@ -98,17 +106,23 @@ def inject_memory_instructions(input_data: dict, task_context: dict) -> dict:
 
 **Multi-agent workflow requires plan acknowledgment before progress contributions.**
 """
-        except:
-            pass
+        except Exception as e:
+            # If context loading fails, use basic instructions
+            context_instructions = f"# Error loading context: {str(e)}\n"
 
-    # Generate memory instructions
-    memory_instructions = f"""
+    # Generate memory instructions (enhanced or legacy)
+    if context_instructions:
+        # Use context-aware instructions
+        memory_instructions = context_instructions
+    else:
+        # Use legacy instructions
+        memory_instructions = f"""
 ## 🧠 Memory System Integration
 
 **Current Session:** {task_context['session_id']}
 **Storage Path:** {task_context['storage_path']}
 **Active Tasks:** {', '.join(task_context['active_tasks']) if task_context['active_tasks'] else 'None'}
-{plan_context}
+
 ### Memory Commands Available:
 ```bash
 # Discovery phase - mutable exploration

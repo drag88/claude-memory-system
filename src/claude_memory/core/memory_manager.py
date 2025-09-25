@@ -90,8 +90,8 @@ class MemoryManager:
         enforcer = self._get_enforcer()
 
         try:
-            # Validate action
-            is_valid, message = enforcer.validate_action(task_name, action)
+            # Validate action with content for context-aware checking
+            is_valid, message = enforcer.validate_action(task_name, action, content or "")
             if not is_valid:
                 return {
                     "success": False,

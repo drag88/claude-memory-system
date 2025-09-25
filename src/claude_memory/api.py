@@ -147,6 +147,27 @@ class MemoryAPI:
         status = self.get_task_status(task_name)
         return status.get("files", {}) if status["success"] else {}
 
+    def get_session_context_injection(self) -> str:
+        """
+        Get context injection text for current session.
+
+        Returns:
+            Context injection text for agent prompts
+        """
+        try:
+            # Get workflow enforcer to access context-aware components
+            enforcer = self.manager._get_enforcer()
+
+            if hasattr(enforcer, 'session_manager') and enforcer.session_manager:
+                # Try to get active task
+                active_task = enforcer.session_manager.context_loader.get_active_task()
+                if active_task:
+                    return enforcer.session_manager.get_context_injection_text(active_task)
+
+            return ""  # No context to inject
+        except Exception:
+            return ""  # Fail silently
+
     def read_task_file(self, task_name: str, file_type: str) -> Optional[str]:
         """
         Read content of a task file.

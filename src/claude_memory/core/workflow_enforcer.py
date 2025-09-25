@@ -17,6 +17,18 @@ from enum import Enum
 from .file_lock import file_lock
 
 
+# Import context-aware components (will be available after they're created)
+try:
+    from .session_workflow_manager import SessionWorkflowManager
+    from .context_loader import WorkflowContextLoader
+    CONTEXT_AWARE_ENABLED = True
+except ImportError:
+    # Graceful fallback if context components not available yet
+    SessionWorkflowManager = None
+    WorkflowContextLoader = None
+    CONTEXT_AWARE_ENABLED = False
+
+
 class WorkflowPhase(Enum):
     """Workflow phases."""
     SETUP = "SETUP"
@@ -46,6 +58,14 @@ class WorkflowEnforcer:
         """
         self.storage_path = storage_path
         self.session_id = session_id
+
+        # Initialize context-aware components if available
+        if CONTEXT_AWARE_ENABLED:
+            self.session_manager = SessionWorkflowManager(storage_path, session_id)
+            self.context_loader = WorkflowContextLoader(storage_path, session_id)
+        else:
+            self.session_manager = None
+            self.context_loader = None
 
     def _get_active_tasks_in_session(self) -> List[str]:
         """
@@ -174,20 +194,34 @@ class WorkflowEnforcer:
         else:
             return WorkflowPhase.INVALID, "Inconsistent file state"
 
-    def validate_action(self, task_name: str, action: str) -> Tuple[bool, str]:
+    def validate_action(self, task_name: str, action: str, content: str = "") -> Tuple[bool, str]:
         """
-        Enhanced validation with stricter phase enforcement and actionable guidance.
+        Enhanced validation with context-aware workflow enforcement.
 
         Args:
             task_name: Name of the task
             action: Action to validate ("scratchpad", "ensure", "append")
+            content: Content to be contributed (for duplication checking)
 
         Returns:
             Tuple of (is_valid, message)
         """
-        # SINGLE-TASK-PER-SESSION ENFORCEMENT
-        # Check if creating a new task when one already exists in this session
-        if action == "scratchpad":
+        # CONTEXT-AWARE VALIDATION (if available)
+        if CONTEXT_AWARE_ENABLED and self.session_manager:
+            # Check workflow continuity and validate contribution
+            is_valid, message = self.session_manager.validate_contribution(task_name, content, action)
+            if not is_valid:
+                return False, message
+
+            # For new task creation, enforce workflow claim
+            current_phase, _ = self.get_workflow_phase(task_name)
+            if current_phase == WorkflowPhase.SETUP and action == "scratchpad":
+                claim_success, claim_message = self.session_manager.claim_workflow(task_name)
+                if not claim_success:
+                    return False, claim_message
+
+        # LEGACY SINGLE-TASK-PER-SESSION ENFORCEMENT (fallback)
+        elif action == "scratchpad":
             # Get phase before any files are created
             current_phase, _ = self.get_workflow_phase(task_name)
             print(f"DEBUG: Task '{task_name}' current phase: {current_phase}")
