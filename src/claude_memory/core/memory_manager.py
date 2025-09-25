@@ -37,6 +37,39 @@ class MemoryManager:
 
         return WorkflowEnforcer(self.storage_path, session_id)
 
+    def validate_phase_transition(self, task_name: str, intended_action: str) -> Dict[str, Any]:
+        """
+        Pre-validate action with enhanced guidance for CLI.
+
+        Args:
+            task_name: Name of the task
+            intended_action: Action to validate before execution
+
+        Returns:
+            Dictionary with validation result and guidance
+        """
+        enforcer = self._get_enforcer()
+
+        try:
+            current_phase, phase_desc = enforcer.get_workflow_phase(task_name)
+            is_valid, message = enforcer.validate_action(task_name, intended_action)
+
+            return {
+                "valid": is_valid,
+                "current_phase": current_phase.value,
+                "phase_description": phase_desc,
+                "message": message,
+                "task_name": task_name
+            }
+        except Exception as e:
+            return {
+                "valid": False,
+                "current_phase": "UNKNOWN",
+                "phase_description": "Error detecting phase",
+                "message": f"Phase validation failed: {str(e)}",
+                "task_name": task_name
+            }
+
     def task_memory_enforcer(
         self,
         task_name: str,
@@ -83,15 +116,30 @@ class MemoryManager:
 
             elif action == "ensure":
                 try:
-                    file_path = enforcer.create_plan(task_name, content or "")
-                    result = {
-                        "success": True,
-                        "action": "ensure",
-                        "file_path": str(file_path),
-                        "message": "Plan created and locked"
-                    }
+                    # Check if we're updating an existing plan during PLANNING phase
+                    current_phase, _ = enforcer.get_workflow_phase(task_name)
+                    files = enforcer.get_task_files(task_name)
+
+                    if current_phase == WorkflowPhase.PLANNING and files[FileType.PLAN]:
+                        # Update existing plan during PLANNING phase
+                        file_path = enforcer.update_plan(task_name, content or "")
+                        result = {
+                            "success": True,
+                            "action": "ensure",
+                            "file_path": str(file_path),
+                            "message": "Plan updated (editable until execution starts)"
+                        }
+                    else:
+                        # Create new plan
+                        file_path = enforcer.create_plan(task_name, content or "")
+                        result = {
+                            "success": True,
+                            "action": "ensure",
+                            "file_path": str(file_path),
+                            "message": "Plan created (editable until execution starts)"
+                        }
                 except FileExistsError:
-                    # Plan already exists, return its path
+                    # Plan already exists and we're not in PLANNING phase
                     files = enforcer.get_task_files(task_name)
                     result = {
                         "success": True,

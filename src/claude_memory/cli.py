@@ -222,6 +222,13 @@ def scratchpad(
     """Create or update task scratchpad for exploration."""
     manager = MemoryManager()
 
+    # Pre-validate phase transition with enhanced guidance
+    validation = manager.validate_phase_transition(task_name, "scratchpad")
+    if not validation["valid"]:
+        rprint(f"[red]{validation['message']}[/red]")
+        rprint(f"[dim]Current phase: {validation['current_phase']}[/dim]")
+        raise typer.Exit(1)
+
     result = manager.task_memory_enforcer(task_name, "scratchpad", content)
     print_result(result, show_details=True)
 
@@ -248,6 +255,13 @@ def plan(
     """Create implementation plan (write-once, then immutable)."""
     manager = MemoryManager()
 
+    # Pre-validate phase transition with enhanced guidance
+    validation = manager.validate_phase_transition(task_name, "ensure")
+    if not validation["valid"]:
+        rprint(f"[red]{validation['message']}[/red]")
+        rprint(f"[dim]Current phase: {validation['current_phase']}[/dim]")
+        raise typer.Exit(1)
+
     # Auto-generate content from scratchpad if requested
     if from_scratchpad and not content:
         # This is a simplified version - in practice, you might want AI assistance here
@@ -262,6 +276,75 @@ def plan(
             console.print(Panel(file_path.read_text(), title=f"Plan: {task_name}"))
 
 
+@app.command("edit-plan")
+def edit_plan(
+    task_name: str = typer.Argument(..., help="Name of the task"),
+    content: str = typer.Option("", "--content", "-c", help="Updated plan content"),
+    edit: bool = typer.Option(False, "--edit", "-e", help="Open plan in editor"),
+    show: bool = typer.Option(False, "--show", "-s", help="Show current plan")
+) -> None:
+    """Edit plan during PLANNING phase (before execution starts)."""
+    manager = MemoryManager()
+
+    # Check current phase
+    status = manager.get_task_status(task_name)
+    if not status["success"]:
+        rprint(f"[red]Task '{task_name}' not found[/red]")
+        raise typer.Exit(1)
+
+    current_phase = status["current_phase"]
+
+    if current_phase != "PLANNING":
+        if current_phase == "EXECUTION":
+            rprint("[red]❌ Cannot edit plan after execution has started![/red]")
+            rprint("[yellow]Plan is locked during execution phase[/yellow]")
+        elif current_phase == "DISCOVERY":
+            rprint(f"[red]❌ Cannot edit plan in {current_phase} phase[/red]")
+            rprint("[yellow]Create a plan first with: claude-memory plan 'task-name'[/yellow]")
+        else:
+            rprint(f"[red]❌ Cannot edit plan in {current_phase} phase[/red]")
+            rprint("[yellow]Plan editing is only available during PLANNING phase[/yellow]")
+        raise typer.Exit(1)
+
+    # Handle edit modes
+    if edit:
+        # Open in editor
+        file_path = Path(status["files"]["plan"])
+        if not file_path or not file_path.exists():
+            rprint("[red]Plan file not found[/red]")
+            raise typer.Exit(1)
+
+        import os
+        editor = os.getenv("EDITOR", "vi")
+        os.system(f"{editor} '{file_path}'")
+        rprint("[green]✓ Plan updated via editor[/green]")
+    elif content:
+        # Update with provided content
+        try:
+            enforcer = manager._get_enforcer()
+            enforcer.update_plan(task_name, content)
+            rprint("[green]✓ Plan updated[/green]")
+        except Exception as e:
+            rprint(f"[red]✗ Error updating plan: {e}[/red]")
+            raise typer.Exit(1)
+    elif show:
+        # Show current plan
+        file_path = Path(status["files"]["plan"]) if status["files"]["plan"] else None
+        if file_path and file_path.exists():
+            console.print(Panel(file_path.read_text(), title=f"Plan: {task_name}"))
+        else:
+            rprint("[yellow]No plan content to show[/yellow]")
+    else:
+        # Default: show current plan if no other options provided
+        file_path = Path(status["files"]["plan"]) if status["files"]["plan"] else None
+        if file_path and file_path.exists():
+            console.print(Panel(file_path.read_text(), title=f"Current Plan: {task_name}"))
+            rprint("\n[dim]To edit:[/dim] claude-memory edit-plan 'task' --edit")
+            rprint("[dim]To update:[/dim] claude-memory edit-plan 'task' --content 'new content'")
+        else:
+            rprint("[yellow]No plan found[/yellow]")
+
+
 @app.command()
 def append(
     task_name: str = typer.Argument(..., help="Name of the task"),
@@ -269,6 +352,13 @@ def append(
 ) -> None:
     """Append progress update to task."""
     manager = MemoryManager()
+
+    # Pre-validate phase transition with enhanced guidance
+    validation = manager.validate_phase_transition(task_name, "append")
+    if not validation["valid"]:
+        rprint(f"[red]{validation['message']}[/red]")
+        rprint(f"[dim]Current phase: {validation['current_phase']}[/dim]")
+        raise typer.Exit(1)
 
     result = manager.task_memory_enforcer(task_name, "append", content)
     print_result(result, show_details=True)

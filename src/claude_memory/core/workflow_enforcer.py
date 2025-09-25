@@ -176,7 +176,7 @@ class WorkflowEnforcer:
 
     def validate_action(self, task_name: str, action: str) -> Tuple[bool, str]:
         """
-        Validate if an action is allowed in current phase.
+        Enhanced validation with stricter phase enforcement and actionable guidance.
 
         Args:
             task_name: Name of the task
@@ -202,20 +202,68 @@ class WorkflowEnforcer:
                     active_task_names = ", ".join(other_tasks)
                     return False, f"Single-task-per-session rule: Active task(s) '{active_task_names}' exist. Complete current task before starting '{task_name}'"
 
-        current_phase, _ = self.get_workflow_phase(task_name)
+        current_phase, phase_desc = self.get_workflow_phase(task_name)
 
-        action_to_phase = {
-            "scratchpad": [WorkflowPhase.SETUP, WorkflowPhase.DISCOVERY],
-            "ensure": [WorkflowPhase.DISCOVERY, WorkflowPhase.PLANNING],
-            "append": [WorkflowPhase.PLANNING, WorkflowPhase.EXECUTION]
+        # Define strict phase-to-action mapping with actionable guidance
+        phase_rules = {
+            WorkflowPhase.SETUP: {
+                "allowed": ["scratchpad"],
+                "blocked": ["ensure", "append"],
+                "guidance": {
+                    "ensure": f"❌ Cannot create plan yet! Start with exploration: claude-memory scratchpad '{task_name}' --content 'exploration notes'",
+                    "append": f"❌ Cannot track progress yet! Start with exploration: claude-memory scratchpad '{task_name}' --content 'exploration notes'"
+                },
+                "success": "✓ Starting discovery phase with scratchpad"
+            },
+            WorkflowPhase.DISCOVERY: {
+                "allowed": ["scratchpad", "ensure"],
+                "blocked": ["append"],
+                "guidance": {
+                    "append": f"❌ Cannot track progress yet! Complete discovery, then create plan: claude-memory plan '{task_name}' --content 'implementation plan'"
+                },
+                "success": "✓ Continue exploration or create implementation plan"
+            },
+            WorkflowPhase.PLANNING: {
+                "allowed": ["append", "ensure"],
+                "blocked": ["scratchpad"],
+                "guidance": {
+                    "scratchpad": f"❌ Discovery phase is complete! Review/edit plan or begin execution: claude-memory edit-plan '{task_name}' or claude-memory append '{task_name}' 'progress update'"
+                },
+                "success": "✓ Plan is ready for review. You can edit it or begin execution"
+            },
+            WorkflowPhase.EXECUTION: {
+                "allowed": ["append"],
+                "blocked": ["scratchpad", "ensure"],
+                "guidance": {
+                    "scratchpad": f"❌ Discovery phase is complete! Continue implementation: claude-memory append '{task_name}' 'progress update'",
+                    "ensure": f"❌ Plan is locked and execution has started! Continue implementation: claude-memory append '{task_name}' 'progress update'"
+                },
+                "success": "✓ Continue tracking progress with append"
+            },
+            WorkflowPhase.INVALID: {
+                "allowed": [],
+                "blocked": ["scratchpad", "ensure", "append"],
+                "guidance": {
+                    "scratchpad": f"❌ Invalid state detected! Check task status: claude-memory status '{task_name}'",
+                    "ensure": f"❌ Invalid state detected! Check task status: claude-memory status '{task_name}'",
+                    "append": f"❌ Invalid state detected! Check task status: claude-memory status '{task_name}'"
+                },
+                "success": "Manual review required"
+            }
         }
 
-        allowed_phases = action_to_phase.get(action, [])
+        rules = phase_rules.get(current_phase, phase_rules[WorkflowPhase.INVALID])
 
-        if current_phase in allowed_phases:
-            return True, f"Action '{action}' is valid for phase {current_phase.value}"
-        else:
-            return False, f"Action '{action}' not allowed in phase {current_phase.value}"
+        # Check if action is blocked in current phase
+        if action in rules["blocked"]:
+            return False, rules["guidance"].get(action, f"Action '{action}' not allowed in {current_phase.value} phase")
+
+        # Check if action is allowed
+        if action not in rules["allowed"]:
+            return False, f"❌ Invalid action '{action}' for {current_phase.value} phase. Current state: {phase_desc}"
+
+        # Action is valid
+        return True, rules["success"]
 
     def create_scratchpad(self, task_name: str, content: str = "") -> Path:
         """
@@ -293,8 +341,9 @@ class WorkflowEnforcer:
                 with open(plan_path, 'w') as f:
                     f.write(template)
 
-            # Make plan file read-only (immutable)
-            self._make_readonly(plan_path)
+            # Create phase transition lock to PLANNING phase
+            # Note: Plan remains editable until execution starts
+            self.lock_phase_transition(task_name, WorkflowPhase.DISCOVERY, WorkflowPhase.PLANNING)
 
         return plan_path
 
@@ -348,9 +397,18 @@ class WorkflowEnforcer:
         with file_lock(progress_path):
             # Create progress file if it doesn't exist
             if not progress_path.exists():
+                # This is the first progress entry - lock the plan now for execution phase
+                plan_path = files[FileType.PLAN]
+                if plan_path and not self._is_readonly(plan_path):
+                    self._make_readonly(plan_path)
+                    print(f"✓ Plan locked for execution phase")
+
                 template = self._get_progress_template(task_name)
                 with open(progress_path, 'w') as f:
                     f.write(template)
+
+                # Create phase transition lock to EXECUTION phase (first progress entry)
+                self.lock_phase_transition(task_name, WorkflowPhase.PLANNING, WorkflowPhase.EXECUTION)
 
             # Append new content
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -360,6 +418,55 @@ class WorkflowEnforcer:
                 f.write(entry)
 
         return progress_path
+
+    def update_plan(self, task_name: str, content: str) -> Path:
+        """
+        Update plan content during PLANNING phase only.
+
+        Args:
+            task_name: Name of the task
+            content: Updated plan content
+
+        Returns:
+            Path to updated plan file
+
+        Raises:
+            ValueError: If not in PLANNING phase or plan is locked
+        """
+        current_phase, _ = self.get_workflow_phase(task_name)
+
+        if current_phase != WorkflowPhase.PLANNING:
+            raise ValueError(
+                f"❌ Cannot edit plan in {current_phase.value} phase. "
+                f"Plan editing is only allowed during PLANNING phase."
+            )
+
+        files = self.get_task_files(task_name)
+        plan_path = files[FileType.PLAN]
+
+        if not plan_path:
+            raise ValueError("No plan exists to update")
+
+        # Check if plan is already locked (shouldn't be in PLANNING phase)
+        if self._is_readonly(plan_path):
+            raise ValueError("Plan is locked and cannot be edited")
+
+        # Update plan content
+        with file_lock(plan_path):
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            agent_info = self._get_agent_info()
+
+            # Add revision marker if this is an update (not initial creation)
+            if content and not content.startswith("# "):  # Simple heuristic for updates vs full content
+                original_content = plan_path.read_text() if plan_path.exists() else ""
+                if "## Revision History" not in original_content:
+                    content += f"\n\n## Revision History\n"
+                content += f"\n### Revised - {agent_info} - {timestamp}\n"
+
+            with open(plan_path, 'w') as f:
+                f.write(content)
+
+        return plan_path
 
     def get_next_steps(self, task_name: str) -> Dict[str, str]:
         """
@@ -433,6 +540,66 @@ class WorkflowEnforcer:
                 issues.append(f"{file_type.value} file is empty")
 
         return issues
+
+    def lock_phase_transition(self, task_name: str, from_phase: WorkflowPhase, to_phase: WorkflowPhase) -> None:
+        """
+        Create a phase transition lock to make transitions intentional.
+
+        Args:
+            task_name: Name of the task
+            from_phase: Phase transitioning from
+            to_phase: Phase transitioning to
+        """
+        task_dir = self.storage_path / task_name
+        task_dir.mkdir(parents=True, exist_ok=True)
+
+        lock_file = task_dir / f".phase_{to_phase.value.lower()}_lock"
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        agent_info = self._get_agent_info()
+
+        lock_content = f"""Phase transition lock
+Transitioned: {from_phase.value} → {to_phase.value}
+Agent: {agent_info}
+Timestamp: {timestamp}
+Session: {self.session_id}
+"""
+
+        lock_file.write_text(lock_content)
+
+    def check_phase_locks(self, task_name: str) -> Dict[WorkflowPhase, Optional[str]]:
+        """
+        Check existing phase transition locks.
+
+        Args:
+            task_name: Name of the task
+
+        Returns:
+            Dictionary mapping phases to lock timestamps (None if no lock)
+        """
+        locks = {}
+        task_dir = self.storage_path / task_name
+
+        if not task_dir.exists():
+            return {phase: None for phase in WorkflowPhase}
+
+        for phase in WorkflowPhase:
+            lock_file = task_dir / f".phase_{phase.value.lower()}_lock"
+            if lock_file.exists():
+                try:
+                    content = lock_file.read_text()
+                    # Extract timestamp from lock content
+                    for line in content.split('\n'):
+                        if line.startswith('Timestamp:'):
+                            locks[phase] = line.replace('Timestamp:', '').strip()
+                            break
+                    else:
+                        locks[phase] = "Lock exists (no timestamp)"
+                except:
+                    locks[phase] = "Lock file corrupted"
+            else:
+                locks[phase] = None
+
+        return locks
 
     def _make_readonly(self, file_path: Path) -> None:
         """Make file read-only."""
