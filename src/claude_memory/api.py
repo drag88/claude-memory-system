@@ -5,10 +5,13 @@ Provides a convenient Python interface for direct integration.
 """
 
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 
 from .core.memory_manager import MemoryManager
 from .core.context_manager import ProjectContext
+
+if TYPE_CHECKING:
+    from claude_memory.backends import BackendType, MemoryBackend
 
 
 class MemoryAPI:
@@ -19,15 +22,23 @@ class MemoryAPI:
     that want to integrate with the memory system directly.
     """
 
-    def __init__(self, storage_path: Optional[Path] = None):
+    def __init__(
+        self,
+        storage_path: Optional[Path] = None,
+        backend_type: Optional["BackendType"] = None,
+        backend: Optional["MemoryBackend"] = None
+    ):
         """
         Initialize Memory API.
 
         Args:
             storage_path: Custom storage path (defaults to auto-resolved)
+            backend_type: Type of backend to use (defaults to AUTO detection)
+            backend: Pre-configured backend instance (overrides backend_type)
         """
-        self.manager = MemoryManager(storage_path)
+        self.manager = MemoryManager(storage_path, backend_type=backend_type, backend=backend)
         self.project_context = ProjectContext()
+        self.backend = self.manager.backend
 
     # Task Memory Operations
     def scratchpad(self, task_name: str, content: str = "") -> Dict[str, Any]:

@@ -186,7 +186,15 @@ Based on scratchpad research, using JWT tokens for simplicity.
 - Unit tests for password hashing
 - Integration tests for login flow
 - End-to-end test for protected routes"
+
+# Edit plan during PLANNING phase (before execution starts)
+claude-memory edit-plan "my-task" --content "Updated plan with refinements..."
+
+# Or open in editor for interactive editing
+claude-memory edit-plan "my-task" --edit
 ```
+
+**Note**: Plans can be edited only during the PLANNING phase. Once execution starts (first progress update), plans become immutable to maintain workflow integrity.
 
 ### Phase 3: Execution (Progress) ⚡
 
@@ -317,6 +325,7 @@ api.append_progress("secure-api", "Security engineer completed: threat model ana
 | `init` | Initialize memory system | `claude-memory init` |
 | `scratchpad` | Create/update exploration notes | `claude-memory scratchpad "task" --content "notes"` |
 | `plan` | Create implementation plan (write-once) | `claude-memory plan "task" --content "strategy"` |
+| `edit-plan` | Edit plan during PLANNING phase | `claude-memory edit-plan "task" --content "updated plan"` |
 | `append` | Add progress update | `claude-memory append "task" "completed X"` |
 | `status` | Show task status | `claude-memory status "task"` |
 
@@ -326,8 +335,8 @@ api.append_progress("secure-api", "Security engineer completed: threat model ana
 |---------|-------------|---------|
 | `session start` | Start new session | `claude-memory session start --name "feature-work"` |
 | `session info` | Show current session | `claude-memory session info` |
-| `session list` | List all sessions | `claude-memory session list` |
-| `session switch` | Switch to session | `claude-memory session switch abc123` |
+| `session list` | List all sessions | `claude-memory session list --limit 20` |
+| `session switch` | Switch to session | `claude-memory session switch --id abc123` |
 
 ### Project Context
 
@@ -683,9 +692,21 @@ claude-memory --debug status "my-task"
 ├─────────────────────┤
 │ Context Manager     │ ← Project context detection
 ├─────────────────────┤
+│ Storage Backends    │ ← File/Claude Tool abstraction
+├─────────────────────┤
 │   File Lock         │ ← Concurrent access control
 └─────────────────────┘
 ```
+
+### Storage Backend Architecture
+
+The system uses a pluggable backend architecture for memory storage:
+
+- **File Backend**: Default local filesystem storage
+- **Claude Tool Backend**: Native Claude memory tool integration (future)
+- **Protocol-based**: Easy to extend with new storage types
+
+This abstraction layer allows seamless switching between storage mechanisms while maintaining the same workflow enforcement and API.
 
 ### Data Flow
 

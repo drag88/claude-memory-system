@@ -7,35 +7,66 @@ session management, workflow enforcement, and file operations.
 
 import os
 from pathlib import Path
-from typing import Dict, Optional, Any, List, Tuple
+from typing import Dict, Optional, Any, List, Tuple, TYPE_CHECKING
 from datetime import datetime
 
 from .session_manager import SessionManager
 from .workflow_enforcer import WorkflowEnforcer, WorkflowPhase, FileType
 from .file_lock import file_lock, cleanup_stale_locks
 
+if TYPE_CHECKING:
+    from claude_memory.backends import MemoryBackend, BackendType
+
 
 class MemoryManager:
     """Main interface for Claude Memory System operations."""
 
-    def __init__(self, storage_path: Optional[Path] = None):
+    def __init__(
+        self,
+        storage_path: Optional[Path] = None,
+        backend_type: Optional["BackendType"] = None,
+        backend: Optional["MemoryBackend"] = None
+    ):
         """
         Initialize memory manager.
 
         Args:
             storage_path: Custom storage path (defaults to auto-resolved)
+            backend_type: Type of backend to use (defaults to AUTO detection)
+            backend: Pre-configured backend instance (overrides backend_type)
         """
         self.session_manager = SessionManager(storage_path)
         self.storage_path = self.session_manager.storage_path
 
+        # Initialize backend
+        if backend is not None:
+            # Use provided backend instance
+            self.backend = backend
+        elif backend_type is not None:
+            # Create backend from type
+            from claude_memory.backends import create_backend
+            self.backend = create_backend(backend_type, self.storage_path)
+        else:
+            # Auto-detect best backend
+            from claude_memory.backends import create_backend, BackendType
+            self.backend = create_backend(BackendType.AUTO, self.storage_path)
+
     def _get_enforcer(self) -> WorkflowEnforcer:
-        """Get workflow enforcer for current session."""
+        """Get workflow enforcer for current session with backend."""
         session_id = self.session_manager.get_current_session()
         if not session_id:
             # Auto-create session if none exists
             session_id = self.session_manager.create_session()
 
-        return WorkflowEnforcer(self.storage_path, session_id)
+        # Get session folder if one exists
+        session_folder = self.session_manager.get_session_folder(session_id)
+
+        return WorkflowEnforcer(
+            self.storage_path,
+            session_id,
+            backend=self.backend,
+            session_folder=session_folder
+        )
 
     def validate_phase_transition(self, task_name: str, intended_action: str) -> Dict[str, Any]:
         """
@@ -232,14 +263,24 @@ class MemoryManager:
 
             elif action == "start":
                 metadata = kwargs.get("metadata", {})
-                session_id = self.session_manager.create_session(metadata)
+                folder_name = kwargs.get("folder_name")
+                session_id = self.session_manager.create_session(metadata, folder_name=folder_name)
 
-                return {
+                response = {
                     "success": True,
                     "action": "start",
                     "session_id": session_id,
                     "message": "New session created"
                 }
+
+                # Add folder info if one was created
+                if folder_name:
+                    session_folder = self.session_manager.get_session_folder(session_id)
+                    if session_folder:
+                        response["folder"] = str(session_folder)
+                        response["message"] = f"New session created in folder: {session_folder.name}"
+
+                return response
 
             elif action == "switch":
                 target_session = kwargs.get("session_id")

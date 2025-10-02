@@ -70,6 +70,29 @@ class SessionManager:
         random_part = hashlib.md5(f"{timestamp}{os.getpid()}".encode()).hexdigest()[:8]
         return random_part
 
+    def _sanitize_folder_name(self, name: str) -> str:
+        """
+        Sanitize a name to be used as a folder name.
+
+        Args:
+            name: The name to sanitize
+
+        Returns:
+            Sanitized folder name
+        """
+        # Replace spaces with hyphens
+        sanitized = name.replace(' ', '-')
+        # Remove any characters that aren't alphanumeric, hyphens, or underscores
+        sanitized = ''.join(c for c in sanitized if c.isalnum() or c in '-_')
+        # Remove consecutive hyphens
+        while '--' in sanitized:
+            sanitized = sanitized.replace('--', '-')
+        # Remove leading/trailing hyphens
+        sanitized = sanitized.strip('-')
+        # Convert to lowercase
+        sanitized = sanitized.lower()
+        return sanitized or 'session'
+
     def get_current_session(self) -> Optional[str]:
         """Get the current session ID."""
         if self.session_file.exists():
@@ -80,18 +103,29 @@ class SessionManager:
                 pass
         return None
 
-    def create_session(self, metadata: Optional[Dict[str, Any]] = None) -> str:
+    def create_session(self, metadata: Optional[Dict[str, Any]] = None, folder_name: Optional[str] = None) -> str:
         """
         Create a new session.
 
         Args:
             metadata: Optional metadata for the session
+            folder_name: Optional folder name for session (will be sanitized)
 
         Returns:
             New session ID
         """
         session_id = self._generate_session_id()
         current_time = datetime.now()
+
+        # Sanitize folder name if provided
+        if folder_name:
+            sanitized_folder = self._sanitize_folder_name(folder_name)
+            # Store folder name in metadata
+            if metadata is None:
+                metadata = {}
+            metadata['folder_name'] = sanitized_folder
+        else:
+            sanitized_folder = None
 
         session_info = SessionInfo(
             session_id=session_id,
@@ -107,6 +141,22 @@ class SessionManager:
             with open(session_info_file, 'w') as f:
                 json.dump(session_info.model_dump(), f, indent=2, default=str)
 
+        # Create session folder if folder name provided
+        if sanitized_folder:
+            session_folder = self.storage_path / sanitized_folder
+            session_folder.mkdir(parents=True, exist_ok=True)
+
+            # Store session info in the folder too
+            folder_session_info = session_folder / ".session_info.json"
+            with file_lock(folder_session_info):
+                with open(folder_session_info, 'w') as f:
+                    json.dump({
+                        "session_id": session_id,
+                        "folder_name": sanitized_folder,
+                        "created_at": current_time.isoformat(),
+                        "updated_at": current_time.isoformat()
+                    }, f, indent=2)
+
         # Update current session
         with file_lock(self.session_file):
             with open(self.session_file, 'w') as f:
@@ -116,6 +166,7 @@ class SessionManager:
         self._update_session_state({
             "session_id": session_id,
             "active_tasks": [],
+            "folder_name": sanitized_folder,
             "created_at": current_time.isoformat(),
             "updated_at": current_time.isoformat()
         })
@@ -307,3 +358,29 @@ class SessionManager:
                 return json.load(f)
         except (OSError, json.JSONDecodeError):
             return {}
+
+    def get_session_folder(self, session_id: Optional[str] = None) -> Optional[Path]:
+        """
+        Get the folder path for a session (if it has one).
+
+        Args:
+            session_id: Session ID (defaults to current session)
+
+        Returns:
+            Path to session folder or None if no named folder
+        """
+        if session_id is None:
+            session_id = self.get_current_session()
+
+        if not session_id:
+            return None
+
+        session_info = self.get_session_info(session_id)
+        if not session_info or not session_info.metadata:
+            return None
+
+        folder_name = session_info.metadata.get('folder_name')
+        if folder_name:
+            return self.storage_path / folder_name
+
+        return None

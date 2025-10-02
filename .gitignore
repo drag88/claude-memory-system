@@ -163,6 +163,8 @@ cython_debug/
 
 # Memory system files (don't commit user's memory files)
 .claude-memories/
+.claude/memories/
+.claude/settings.json
 *.lock
 
 # OS generated files

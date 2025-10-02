@@ -11,10 +11,14 @@ import os
 import stat
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, Optional, List, TYPE_CHECKING
 from enum import Enum
 
 from .file_lock import file_lock
+
+# Import backend abstraction
+if TYPE_CHECKING:
+    from claude_memory.backends import MemoryBackend
 
 
 # Import context-aware components (will be available after they're created)
@@ -48,21 +52,35 @@ class FileType(Enum):
 class WorkflowEnforcer:
     """Enforces three-phase workflow rules and file immutability."""
 
-    def __init__(self, storage_path: Path, session_id: str):
+    def __init__(self, storage_path: Path, session_id: str, backend: Optional["MemoryBackend"] = None, session_folder: Optional[Path] = None):
         """
         Initialize workflow enforcer.
 
         Args:
             storage_path: Base storage path for memories
             session_id: Current session ID
+            backend: Optional memory backend (defaults to FileBackend)
+            session_folder: Optional session folder path (for named sessions)
         """
-        self.storage_path = storage_path
+        self.base_storage_path = storage_path
         self.session_id = session_id
+        self.session_folder = session_folder
+
+        # Use session folder if provided, otherwise use base storage path
+        self.storage_path = session_folder if session_folder else storage_path
+
+        # Initialize backend
+        if backend is None:
+            # Default to FileBackend for backward compatibility
+            from claude_memory.backends import create_backend, BackendType
+            self.backend = create_backend(BackendType.FILE, self.base_storage_path)
+        else:
+            self.backend = backend
 
         # Initialize context-aware components if available
         if CONTEXT_AWARE_ENABLED:
-            self.session_manager = SessionWorkflowManager(storage_path, session_id)
-            self.context_loader = WorkflowContextLoader(storage_path, session_id)
+            self.session_manager = SessionWorkflowManager(self.storage_path, session_id)
+            self.context_loader = WorkflowContextLoader(self.storage_path, session_id)
         else:
             self.session_manager = None
             self.context_loader = None
@@ -79,16 +97,17 @@ class WorkflowEnforcer:
         # System directories that should not be considered as tasks
         system_dirs = {'.context', 'sessions', '.git', '.DS_Store'}
 
-        # Look for task directories with files for this session
-        if self.storage_path.exists():
-            for task_dir in self.storage_path.iterdir():
+        # Look for task directories with files for this session using backend
+        if self.backend.exists(self.storage_path):
+            task_dirs = self.backend.list_directory(self.storage_path)
+            for task_dir in task_dirs:
                 if task_dir.is_dir() and task_dir.name not in system_dirs:
                     task_name = task_dir.name
                     # Check if this task has any files for current session
-                    session_files = list(task_dir.glob(f"*{self.session_id}*"))
+                    task_files = self.backend.list_directory(task_dir)
+                    session_files = [f for f in task_files if self.session_id in f.name]
                     if session_files:
                         # Consider any task with session files as active
-                        # (even SETUP phase counts as active)
                         active_tasks.append(task_name)
 
         return active_tasks
@@ -150,12 +169,21 @@ class WorkflowEnforcer:
         Returns:
             Dictionary mapping file types to paths (None if doesn't exist)
         """
-        task_dir = self.storage_path / task_name
-        files = {}
-
-        for file_type in FileType:
-            file_path = task_dir / f"{task_name}-{self.session_id}-{file_type.value}.md"
-            files[file_type] = file_path if file_path.exists() else None
+        # If we have a session folder, files go directly there (no task subfolder)
+        if self.session_folder:
+            task_dir = self.storage_path
+            # Simplified naming when using session folders
+            files = {}
+            for file_type in FileType:
+                file_path = task_dir / f"{file_type.value}.md"
+                files[file_type] = file_path if self.backend.exists(file_path) else None
+        else:
+            # Legacy behavior: task subfolder with full names
+            task_dir = self.storage_path / task_name
+            files = {}
+            for file_type in FileType:
+                file_path = task_dir / f"{task_name}-{self.session_id}-{file_type.value}.md"
+                files[file_type] = file_path if self.backend.exists(file_path) else None
 
         return files
 
@@ -310,13 +338,17 @@ class WorkflowEnforcer:
         Returns:
             Path to scratchpad file
         """
-        task_dir = self.storage_path / task_name
-        task_dir.mkdir(parents=True, exist_ok=True)
-
-        scratchpad_path = task_dir / f"{task_name}-{self.session_id}-scratchpad.md"
+        # Use session folder if available, otherwise create task folder
+        if self.session_folder:
+            task_dir = self.storage_path
+            scratchpad_path = task_dir / "scratchpad.md"
+        else:
+            task_dir = self.storage_path / task_name
+            task_dir.mkdir(parents=True, exist_ok=True)
+            scratchpad_path = task_dir / f"{task_name}-{self.session_id}-scratchpad.md"
 
         with file_lock(scratchpad_path):
-            if not scratchpad_path.exists():
+            if not self.backend.exists(scratchpad_path):
                 # Create new scratchpad with template and initial content
                 template = self._get_scratchpad_template(task_name)
                 initial_content = template
@@ -324,15 +356,13 @@ class WorkflowEnforcer:
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     agent_info = self._get_agent_info()
                     initial_content += f"\n## Initial Content - {agent_info} - {timestamp}\n\n{content}\n"
-                with open(scratchpad_path, 'w') as f:
-                    f.write(initial_content)
+                self.backend.write(scratchpad_path, initial_content)
             elif content:
                 # Append to existing scratchpad (collaborative/mutable)
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 agent_info = self._get_agent_info()
                 entry = f"\n## Update - {agent_info} - {timestamp}\n\n{content}\n"
-                with open(scratchpad_path, 'a') as f:
-                    f.write(entry)
+                self.backend.append(scratchpad_path, entry)
 
         return scratchpad_path
 
@@ -357,23 +387,26 @@ class WorkflowEnforcer:
         if not files[FileType.SCRATCHPAD]:
             raise ValueError("Cannot create plan without scratchpad")
 
-        # Check if plan already exists
-        plan_path = self.storage_path / task_name / f"{task_name}-{self.session_id}-plan.md"
-        if plan_path.exists():
-            raise FileExistsError("Plan already exists and is immutable")
+        # Determine plan path based on session folder
+        if self.session_folder:
+            plan_path = self.storage_path / "plan.md"
+            task_dir = self.storage_path
+        else:
+            plan_path = self.storage_path / task_name / f"{task_name}-{self.session_id}-plan.md"
+            task_dir = self.storage_path / task_name
+            task_dir.mkdir(parents=True, exist_ok=True)
 
-        task_dir = self.storage_path / task_name
-        task_dir.mkdir(parents=True, exist_ok=True)
+        # Check if plan already exists
+        if self.backend.exists(plan_path):
+            raise FileExistsError("Plan already exists and is immutable")
 
         with file_lock(plan_path):
             if content:
-                with open(plan_path, 'w') as f:
-                    f.write(content)
+                self.backend.write(plan_path, content)
             else:
                 # Create plan template with scratchpad reference
                 template = self._get_plan_template(task_name)
-                with open(plan_path, 'w') as f:
-                    f.write(template)
+                self.backend.write(plan_path, template)
 
             # Create phase transition lock to PLANNING phase
             # Note: Plan remains editable until execution starts
@@ -401,19 +434,27 @@ class WorkflowEnforcer:
         if not files[FileType.PLAN]:
             raise ValueError("Cannot track progress without plan")
 
-        # Read existing plan for validation
+        # Read existing plan for validation using backend
         plan_path = files[FileType.PLAN]
         plan_content = ""
-        if plan_path and plan_path.exists():
-            plan_content = plan_path.read_text()
+        if plan_path and self.backend.exists(plan_path):
+            plan_content = self.backend.read(plan_path) or ""
 
         # Check if this is a subsequent agent (not the plan creator)
         agent_info = self._get_agent_info()
-        progress_path = self.storage_path / task_name / f"{task_name}-{self.session_id}-progress.md"
+
+        # Determine progress path based on session folder
+        if self.session_folder:
+            progress_path = self.storage_path / "progress.md"
+            task_dir = self.storage_path
+        else:
+            progress_path = self.storage_path / task_name / f"{task_name}-{self.session_id}-progress.md"
+            task_dir = self.storage_path / task_name
+            task_dir.mkdir(parents=True, exist_ok=True)
 
         # If progress file exists and this agent hasn't contributed yet, require plan acknowledgment
-        if progress_path.exists():
-            existing_progress = progress_path.read_text()
+        if self.backend.exists(progress_path):
+            existing_progress = self.backend.read(progress_path) or ""
             if agent_info not in existing_progress:
                 # This is a new agent joining - require plan acknowledgment
                 plan_keywords = ["plan", "strategy", "approach", "based on", "following", "according to"]
@@ -425,21 +466,17 @@ class WorkflowEnforcer:
                         f"Include plan references like: 'Following the established plan...', 'Based on the plan strategy...', etc."
                     )
 
-        task_dir = self.storage_path / task_name
-        task_dir.mkdir(parents=True, exist_ok=True)
-
         with file_lock(progress_path):
             # Create progress file if it doesn't exist
-            if not progress_path.exists():
+            if not self.backend.exists(progress_path):
                 # This is the first progress entry - lock the plan now for execution phase
                 plan_path = files[FileType.PLAN]
-                if plan_path and not self._is_readonly(plan_path):
-                    self._make_readonly(plan_path)
+                if plan_path and not self.backend.is_readonly(plan_path):
+                    self.backend.make_readonly(plan_path)
                     print(f"✓ Plan locked for execution phase")
 
                 template = self._get_progress_template(task_name)
-                with open(progress_path, 'w') as f:
-                    f.write(template)
+                self.backend.write(progress_path, template)
 
                 # Create phase transition lock to EXECUTION phase (first progress entry)
                 self.lock_phase_transition(task_name, WorkflowPhase.PLANNING, WorkflowPhase.EXECUTION)
@@ -448,8 +485,7 @@ class WorkflowEnforcer:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             entry = f"\n## Progress Update - {agent_info} - {timestamp}\n\n{content}\n"
 
-            with open(progress_path, 'a') as f:
-                f.write(entry)
+            self.backend.append(progress_path, entry)
 
         return progress_path
 
@@ -482,7 +518,7 @@ class WorkflowEnforcer:
             raise ValueError("No plan exists to update")
 
         # Check if plan is already locked (shouldn't be in PLANNING phase)
-        if self._is_readonly(plan_path):
+        if self.backend.is_readonly(plan_path):
             raise ValueError("Plan is locked and cannot be edited")
 
         # Update plan content
@@ -492,13 +528,12 @@ class WorkflowEnforcer:
 
             # Add revision marker if this is an update (not initial creation)
             if content and not content.startswith("# "):  # Simple heuristic for updates vs full content
-                original_content = plan_path.read_text() if plan_path.exists() else ""
+                original_content = self.backend.read(plan_path) or ""
                 if "## Revision History" not in original_content:
                     content += f"\n\n## Revision History\n"
                 content += f"\n### Revised - {agent_info} - {timestamp}\n"
 
-            with open(plan_path, 'w') as f:
-                f.write(content)
+            self.backend.write(plan_path, content)
 
         return plan_path
 
@@ -584,8 +619,12 @@ class WorkflowEnforcer:
             from_phase: Phase transitioning from
             to_phase: Phase transitioning to
         """
-        task_dir = self.storage_path / task_name
-        task_dir.mkdir(parents=True, exist_ok=True)
+        # Use session folder if available, otherwise create task folder
+        if self.session_folder:
+            task_dir = self.storage_path
+        else:
+            task_dir = self.storage_path / task_name
+            task_dir.mkdir(parents=True, exist_ok=True)
 
         lock_file = task_dir / f".phase_{to_phase.value.lower()}_lock"
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -598,7 +637,7 @@ Timestamp: {timestamp}
 Session: {self.session_id}
 """
 
-        lock_file.write_text(lock_content)
+        self.backend.write(lock_file, lock_content)
 
     def check_phase_locks(self, task_name: str) -> Dict[WorkflowPhase, Optional[str]]:
         """
@@ -611,16 +650,21 @@ Session: {self.session_id}
             Dictionary mapping phases to lock timestamps (None if no lock)
         """
         locks = {}
-        task_dir = self.storage_path / task_name
 
-        if not task_dir.exists():
+        # Use session folder if available, otherwise use task folder
+        if self.session_folder:
+            task_dir = self.storage_path
+        else:
+            task_dir = self.storage_path / task_name
+
+        if not self.backend.exists(task_dir):
             return {phase: None for phase in WorkflowPhase}
 
         for phase in WorkflowPhase:
             lock_file = task_dir / f".phase_{phase.value.lower()}_lock"
-            if lock_file.exists():
+            if self.backend.exists(lock_file):
                 try:
-                    content = lock_file.read_text()
+                    content = self.backend.read(lock_file) or ""
                     # Extract timestamp from lock content
                     for line in content.split('\n'):
                         if line.startswith('Timestamp:'):
@@ -636,14 +680,12 @@ Session: {self.session_id}
         return locks
 
     def _make_readonly(self, file_path: Path) -> None:
-        """Make file read-only."""
-        current_permissions = file_path.stat().st_mode
-        readonly_permissions = current_permissions & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
-        file_path.chmod(readonly_permissions)
+        """Make file read-only using backend."""
+        self.backend.make_readonly(file_path)
 
     def _is_readonly(self, file_path: Path) -> bool:
-        """Check if file is read-only."""
-        return not os.access(file_path, os.W_OK)
+        """Check if file is read-only using backend."""
+        return self.backend.is_readonly(file_path)
 
     def _get_scratchpad_template(self, task_name: str) -> str:
         """Get scratchpad template."""

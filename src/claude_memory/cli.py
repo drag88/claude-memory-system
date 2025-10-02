@@ -448,13 +448,14 @@ def status(
 def session(
     action: str = typer.Argument(..., help="Action: start, info, list, switch"),
     session_id: Optional[str] = typer.Option(None, "--id", help="Session ID for switch action"),
+    name: Optional[str] = typer.Option(None, "--name", help="Folder name for new session"),
     limit: int = typer.Option(10, "--limit", "-l", help="Limit for list action")
 ) -> None:
     """Manage sessions."""
     manager = MemoryManager()
 
     if action == "start":
-        result = manager.session_manager_action("start")
+        result = manager.session_manager_action("start", folder_name=name)
         print_result(result, show_details=True)
 
     elif action == "info":

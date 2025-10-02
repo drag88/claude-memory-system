@@ -1,5 +1,5 @@
 """
-Claude Memory System - Portable file-based memory for Claude Code.
+Claude Memory System - Portable memory system with pluggable backends.
 
 A standalone, portable memory system that implements the three-file workflow:
 - Scratchpad (mutable exploration)
@@ -7,6 +7,7 @@ A standalone, portable memory system that implements the three-file workflow:
 - Progress (append-only tracking)
 
 Features:
+- Pluggable storage backends (File, Claude Memory Tools)
 - Cross-platform file locking
 - Sub-agent coordination via hooks
 - Global CLI installation with uv
@@ -18,10 +19,23 @@ from .core.session_manager import SessionManager
 from .core.workflow_enforcer import WorkflowEnforcer
 from .api import MemoryAPI
 
-__version__ = "1.0.0"
+# Backend classes
+from .backends import (
+    MemoryBackend,
+    BackendType,
+    create_backend,
+    detect_available_backend,
+)
+
+__version__ = "2.0.0"
 __all__ = [
     "MemoryManager",
     "SessionManager",
     "WorkflowEnforcer",
     "MemoryAPI",
+    # Backend exports
+    "MemoryBackend",
+    "BackendType",
+    "create_backend",
+    "detect_available_backend",
 ]
