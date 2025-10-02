@@ -67,6 +67,7 @@ def init(
         try:
             # Load template from package templates
             import claude_memory
+            import tempfile
             package_path = Path(claude_memory.__file__).parent
             template_path = package_path / "templates" / "claude_template.md"
 
@@ -79,13 +80,25 @@ def init(
                     if "## 🧠 Claude Memory System" not in existing_content:
                         # Append memory system section
                         updated_content = existing_content.rstrip() + "\n\n" + template_content
-                        claude_md_path.write_text(updated_content)
+
+                        # Write atomically to ensure exact filename
+                        with tempfile.NamedTemporaryFile(mode='w', dir=project_root, delete=False, suffix='.tmp') as tmp_file:
+                            tmp_file.write(updated_content)
+                            tmp_path = Path(tmp_file.name)
+
+                        # Atomic rename - ensures file is named exactly "CLAUDE.md"
+                        tmp_path.replace(claude_md_path)
                         rprint(f"[green]✓[/green] Added memory system instructions to existing CLAUDE.md")
                     else:
                         rprint(f"[yellow]ℹ️[/yellow] CLAUDE.md already contains memory system instructions")
                 else:
-                    # Create new CLAUDE.md with template
-                    claude_md_path.write_text(template_content)
+                    # Create new CLAUDE.md with template using atomic write
+                    with tempfile.NamedTemporaryFile(mode='w', dir=project_root, delete=False, suffix='.tmp') as tmp_file:
+                        tmp_file.write(template_content)
+                        tmp_path = Path(tmp_file.name)
+
+                    # Atomic rename - ensures file is named exactly "CLAUDE.md"
+                    tmp_path.replace(claude_md_path)
                     rprint(f"[green]✓[/green] Created CLAUDE.md with memory system instructions")
             else:
                 rprint(f"[yellow]⚠️[/yellow] Template file not found, skipping CLAUDE.md creation")
